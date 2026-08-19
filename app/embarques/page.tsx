@@ -11,12 +11,12 @@ import { EstadoBadge } from '@/components/shared/estado-badge'
 import { PageHeader } from '@/components/shared/page-header'
 import { obtenerEmbarques } from '@/lib/data'
 import { formatFechaHora, formatNumero } from '@/lib/format'
+import { metricasEmbarques } from '@/lib/metrics'
 import { ESTADO_EMBARQUE } from '@/lib/status-config'
 
 export default async function EmbarquesPage() {
   const embarques = await obtenerEmbarques()
-  const totalUnidades = embarques.reduce((acc, e) => acc + e.unidades, 0)
-  const retrasados = embarques.filter((e) => e.estado === 'retrasado').length
+  const { totalUnidades, retrasados } = metricasEmbarques(embarques)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">

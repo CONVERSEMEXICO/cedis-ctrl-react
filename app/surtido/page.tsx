@@ -4,12 +4,13 @@ import { EstadoBadge } from '@/components/shared/estado-badge'
 import { PageHeader } from '@/components/shared/page-header'
 import { obtenerPedidosSurtido } from '@/lib/data'
 import { formatFechaHora, formatNumero } from '@/lib/format'
+import { avanceSurtido, metricasSurtido } from '@/lib/metrics'
 import { ESTADO_SURTIDO } from '@/lib/status-config'
 import { cn } from '@/lib/utils'
 
 export default async function SurtidoPage() {
   const pedidos = await obtenerPedidosSurtido()
-  const enProceso = pedidos.filter((p) => p.estado === 'surtiendo').length
+  const { enProceso } = metricasSurtido(pedidos)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
@@ -29,10 +30,7 @@ export default async function SurtidoPage() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {pedidos.map((p) => {
-          const pct =
-            p.unidadesTotales > 0
-              ? Math.round((p.unidadesSurtidas / p.unidadesTotales) * 100)
-              : 0
+          const avance = avanceSurtido(p)
           return (
             <Card key={p.id}>
               <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
@@ -51,7 +49,7 @@ export default async function SurtidoPage() {
                     </span>
                   </div>
                   <Progress
-                    value={pct}
+                    value={avance}
                     className={cn(
                       '[&_[data-slot=progress-indicator]]:bg-primary',
                       p.estado === 'completado' && '[&_[data-slot=progress-indicator]]:bg-success',

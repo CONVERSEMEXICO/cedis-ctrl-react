@@ -12,6 +12,7 @@ import { ProductividadChart, type ProductividadDato } from '@/components/product
 import { PageHeader } from '@/components/shared/page-header'
 import { obtenerRegistrosProductividad } from '@/lib/data'
 import { formatFecha } from '@/lib/format'
+import { cumplimientoRegistro, metricasProductividad } from '@/lib/metrics'
 import { cn } from '@/lib/utils'
 
 const TURNO_LABEL: Record<string, string> = {
@@ -29,14 +30,7 @@ export default async function ProductividadPage() {
     meta: r.metaUnidadesPorHora,
   }))
 
-  const promedioCumplimiento =
-    registros.length > 0
-      ? Math.round(
-          (registros.reduce((acc, r) => acc + r.unidadesPorHora / r.metaUnidadesPorHora, 0) /
-            registros.length) *
-            100,
-        )
-      : 0
+  const { pctCumplimientoMeta } = metricasProductividad(registros)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
@@ -47,7 +41,7 @@ export default async function ProductividadPage() {
         actions={
           <div className="flex flex-col text-right">
             <span className="font-mono text-lg font-semibold tabular-nums text-productividad">
-              {promedioCumplimiento}%
+              {pctCumplimientoMeta}%
             </span>
             <span className="text-xs text-muted-foreground">cumplimiento promedio</span>
           </div>
@@ -78,7 +72,7 @@ export default async function ProductividadPage() {
           </TableHeader>
           <TableBody>
             {registros.map((r) => {
-              const cumplimiento = Math.round((r.unidadesPorHora / r.metaUnidadesPorHora) * 100)
+              const cumplimiento = cumplimientoRegistro(r)
               return (
                 <TableRow key={r.id}>
                   <TableCell>{r.area}</TableCell>
