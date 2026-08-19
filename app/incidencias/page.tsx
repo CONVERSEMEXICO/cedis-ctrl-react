@@ -11,6 +11,7 @@ import { EstadoBadge } from '@/components/shared/estado-badge'
 import { PageHeader } from '@/components/shared/page-header'
 import { obtenerIncidencias } from '@/lib/data'
 import { formatFechaHora } from '@/lib/format'
+import { metricasIncidencias, ordenarPorFechaCreacionDesc } from '@/lib/metrics'
 import {
   ESTADO_INCIDENCIA,
   MODULO_DOT_CLASS,
@@ -22,16 +23,8 @@ import { cn } from '@/lib/utils'
 
 export default async function IncidenciasPage() {
   const incidencias = await obtenerIncidencias()
-  const abiertas = incidencias.filter(
-    (i) => i.estado === 'abierta' || i.estado === 'atencion',
-  ).length
-  const criticas = incidencias.filter(
-    (i) => i.severidad === 'critica' && (i.estado === 'abierta' || i.estado === 'atencion'),
-  ).length
-
-  const ordenadas = [...incidencias].sort(
-    (a, b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime(),
-  )
+  const { abiertas, criticas } = metricasIncidencias(incidencias)
+  const ordenadas = ordenarPorFechaCreacionDesc(incidencias)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">

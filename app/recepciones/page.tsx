@@ -10,12 +10,13 @@ import { EstadoBadge } from '@/components/shared/estado-badge'
 import { PageHeader } from '@/components/shared/page-header'
 import { obtenerRecepciones } from '@/lib/data'
 import { formatFechaHora, formatNumero } from '@/lib/format'
+import { metricasRecepciones } from '@/lib/metrics'
 import { ESTADO_RECEPCION } from '@/lib/status-config'
 import { cn } from '@/lib/utils'
 
 export default async function RecepcionesPage() {
   const recepciones = await obtenerRecepciones()
-  const conDiscrepancia = recepciones.filter((r) => r.tieneDiscrepancia).length
+  const { conDiscrepancia } = metricasRecepciones(recepciones)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">

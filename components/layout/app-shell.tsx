@@ -1,4 +1,5 @@
 import { obtenerDatosCedis } from '@/lib/data'
+import { incidenciasAbiertas } from '@/lib/metrics'
 import { SidebarNav } from '@/components/layout/sidebar-nav'
 import { Topbar } from '@/components/layout/topbar'
 
@@ -11,9 +12,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     surtido: data.pedidosSurtido.length,
     etiquetado: data.lotesEtiquetado.length,
     productividad: data.productividad.length,
-    incidencias: data.incidencias.filter(
-      (i) => i.estado === 'abierta' || i.estado === 'atencion',
-    ).length,
+    incidencias: incidenciasAbiertas(data.incidencias).length,
   }
 
   return (

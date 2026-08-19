@@ -11,11 +11,12 @@ import { EstadoBadge } from '@/components/shared/estado-badge'
 import { PageHeader } from '@/components/shared/page-header'
 import { obtenerLotesEtiquetado } from '@/lib/data'
 import { formatFechaHora, formatNumero } from '@/lib/format'
+import { metricasEtiquetado } from '@/lib/metrics'
 import { ESTADO_ETIQUETADO } from '@/lib/status-config'
 
 export default async function EtiquetadoPage() {
   const lotes = await obtenerLotesEtiquetado()
-  const rechazados = lotes.filter((l) => l.estado === 'rechazado').length
+  const { rechazados } = metricasEtiquetado(lotes)
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">

@@ -8,64 +8,43 @@ import {
 } from '@/components/dashboard/incidencias-severidad-chart'
 import { KpiTile } from '@/components/dashboard/kpi-tile'
 import { obtenerDatosCedis } from '@/lib/data'
+import {
+  conteoPorSeveridad,
+  incidenciasAbiertas,
+  metricasEmbarques,
+  metricasEtiquetado,
+  metricasIncidencias,
+  metricasProductividad,
+  metricasRecepciones,
+  metricasSurtido,
+} from '@/lib/metrics'
 import { SEVERIDAD_CONFIG } from '@/lib/status-config'
 import type { Severidad } from '@/types/cedis'
-
-function pct(numerador: number, denominador: number) {
-  if (denominador === 0) return 0
-  return Math.round((numerador / denominador) * 100)
-}
 
 export default async function DashboardPage() {
   const { embarques, recepciones, pedidosSurtido, lotesEtiquetado, incidencias, productividad } =
     await obtenerDatosCedis()
 
-  const embarquesEntregados = embarques.filter((e) => e.estado === 'entregado').length
-  const embarquesRetrasados = embarques.filter((e) => e.estado === 'retrasado').length
-  const pctEntregados = pct(embarquesEntregados, embarques.length)
-
-  const recepcionesRecibidas = recepciones.filter((r) => r.estado === 'recibida').length
-  const recepcionesDiscrepancia = recepciones.filter((r) => r.tieneDiscrepancia).length
-  const pctRecibidas = pct(recepcionesRecibidas, recepciones.length)
-
-  const surtidoCompletado = pedidosSurtido.filter((s) => s.estado === 'completado').length
-  const pctSurtidoCompletado = pct(surtidoCompletado, pedidosSurtido.length)
-
-  const etiquetadoCompletado = lotesEtiquetado.filter((l) => l.estado === 'etiquetado').length
-  const pctEtiquetado = pct(etiquetadoCompletado, lotesEtiquetado.length)
-
-  const incidenciasAbiertas = incidencias.filter(
-    (i) => i.estado === 'abierta' || i.estado === 'atencion',
-  )
-  const incidenciasCriticas = incidenciasAbiertas.filter((i) => i.severidad === 'critica').length
-
-  const promedioUnidadesHora =
-    productividad.length > 0
-      ? Math.round(
-          productividad.reduce((acc, p) => acc + p.unidadesPorHora, 0) / productividad.length,
-        )
-      : 0
-  const pctCumplimientoMeta =
-    productividad.length > 0
-      ? Math.round(
-          (productividad.reduce((acc, p) => acc + p.unidadesPorHora / p.metaUnidadesPorHora, 0) /
-            productividad.length) *
-            100,
-        )
-      : 0
+  const mEmbarques = metricasEmbarques(embarques)
+  const mRecepciones = metricasRecepciones(recepciones)
+  const mSurtido = metricasSurtido(pedidosSurtido)
+  const mEtiquetado = metricasEtiquetado(lotesEtiquetado)
+  const mIncidencias = metricasIncidencias(incidencias)
+  const mProductividad = metricasProductividad(productividad)
 
   const cumplimientoData: CumplimientoDato[] = [
-    { proceso: 'Embarques', valor: pctEntregados, fill: 'var(--module-embarques)' },
-    { proceso: 'Recepciones', valor: pctRecibidas, fill: 'var(--module-recepciones)' },
-    { proceso: 'Surtido', valor: pctSurtidoCompletado, fill: 'var(--module-surtido)' },
-    { proceso: 'Etiquetado', valor: pctEtiquetado, fill: 'var(--module-etiquetado)' },
+    { proceso: 'Embarques', valor: mEmbarques.pctEntregados, fill: 'var(--module-embarques)' },
+    { proceso: 'Recepciones', valor: mRecepciones.pctRecibidas, fill: 'var(--module-recepciones)' },
+    { proceso: 'Surtido', valor: mSurtido.pctCompletados, fill: 'var(--module-surtido)' },
+    { proceso: 'Etiquetado', valor: mEtiquetado.pctEtiquetados, fill: 'var(--module-etiquetado)' },
   ]
 
+  const conteoSeveridad = conteoPorSeveridad(incidenciasAbiertas(incidencias))
   const severidades: Severidad[] = ['baja', 'media', 'alta', 'critica']
   const severidadData: SeveridadDato[] = severidades
     .map((sev) => ({
       severidad: SEVERIDAD_CONFIG[sev].label,
-      cantidad: incidenciasAbiertas.filter((i) => i.severidad === sev).length,
+      cantidad: conteoSeveridad[sev],
       fill: SEVERIDAD_CONFIG[sev].chartVar,
     }))
     .filter((d) => d.cantidad > 0)
@@ -79,14 +58,14 @@ export default async function DashboardPage() {
             title="Embarques"
             icon={Truck}
             accentClass="border-t-embarques"
-            primaryValue={String(embarques.length)}
+            primaryValue={String(mEmbarques.total)}
             primaryLabel="total"
             metrics={[
-              { label: '% entregados', value: `${pctEntregados}%` },
+              { label: '% entregados', value: `${mEmbarques.pctEntregados}%` },
               {
                 label: 'Retrasados',
-                value: String(embarquesRetrasados),
-                danger: embarquesRetrasados > 0,
+                value: String(mEmbarques.retrasados),
+                danger: mEmbarques.retrasados > 0,
               },
             ]}
           />
@@ -95,14 +74,14 @@ export default async function DashboardPage() {
             title="Recepciones"
             icon={PackageCheck}
             accentClass="border-t-recepciones"
-            primaryValue={String(recepciones.length)}
+            primaryValue={String(mRecepciones.total)}
             primaryLabel="total"
             metrics={[
-              { label: '% recibidas', value: `${pctRecibidas}%` },
+              { label: '% recibidas', value: `${mRecepciones.pctRecibidas}%` },
               {
                 label: 'Con discrepancia',
-                value: String(recepcionesDiscrepancia),
-                danger: recepcionesDiscrepancia > 0,
+                value: String(mRecepciones.conDiscrepancia),
+                danger: mRecepciones.conDiscrepancia > 0,
               },
             ]}
           />
@@ -111,31 +90,31 @@ export default async function DashboardPage() {
             title="Surtido"
             icon={Warehouse}
             accentClass="border-t-surtido"
-            primaryValue={String(pedidosSurtido.length)}
+            primaryValue={String(mSurtido.total)}
             primaryLabel="total"
-            metrics={[{ label: '% completados', value: `${pctSurtidoCompletado}%` }]}
+            metrics={[{ label: '% completados', value: `${mSurtido.pctCompletados}%` }]}
           />
           <KpiTile
             href="/etiquetado"
             title="Etiquetado"
             icon={Tag}
             accentClass="border-t-etiquetado"
-            primaryValue={String(lotesEtiquetado.length)}
+            primaryValue={String(mEtiquetado.total)}
             primaryLabel="total"
-            metrics={[{ label: '% etiquetados', value: `${pctEtiquetado}%` }]}
+            metrics={[{ label: '% etiquetados', value: `${mEtiquetado.pctEtiquetados}%` }]}
           />
           <KpiTile
             href="/incidencias"
             title="Incidencias abiertas"
             icon={AlertTriangle}
             accentClass="border-t-incidencias"
-            primaryValue={String(incidenciasAbiertas.length)}
+            primaryValue={String(mIncidencias.abiertas)}
             primaryLabel="abiertas"
             metrics={[
               {
                 label: 'Críticas',
-                value: String(incidenciasCriticas),
-                danger: incidenciasCriticas > 0,
+                value: String(mIncidencias.criticas),
+                danger: mIncidencias.criticas > 0,
               },
             ]}
           />
@@ -144,9 +123,11 @@ export default async function DashboardPage() {
             title="Productividad"
             icon={Gauge}
             accentClass="border-t-productividad"
-            primaryValue={String(promedioUnidadesHora)}
+            primaryValue={String(mProductividad.promedioUnidadesHora)}
             primaryLabel="uds/hora"
-            metrics={[{ label: '% cumplimiento vs meta', value: `${pctCumplimientoMeta}%` }]}
+            metrics={[
+              { label: '% cumplimiento vs meta', value: `${mProductividad.pctCumplimientoMeta}%` },
+            ]}
           />
         </div>
       </section>
