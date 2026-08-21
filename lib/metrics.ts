@@ -43,7 +43,7 @@ export function metricasEmbarques(embarques: Embarque[]): MetricasEmbarques {
     entregados,
     retrasados,
     pctEntregados: pct(entregados, embarques.length),
-    totalUnidades: embarques.reduce((acc, e) => acc + e.unidades, 0),
+    totalUnidades: embarques.reduce((acc, e) => acc + (e.unidades ?? 0), 0),
   }
 }
 
@@ -64,7 +64,7 @@ export function metricasRecepciones(recepciones: Recepcion[]): MetricasRecepcion
   return {
     total: recepciones.length,
     recibidas,
-    conDiscrepancia: recepciones.filter((r) => r.tieneDiscrepancia).length,
+    conDiscrepancia: recepciones.filter((r) => r.estado === 'discrepancia').length,
     pctRecibidas: pct(recibidas, recepciones.length),
   }
 }
@@ -78,6 +78,7 @@ export interface MetricasSurtido {
   completados: number
   enProceso: number
   pctCompletados: number
+  totalLineas: number
 }
 
 export function metricasSurtido(pedidos: PedidoSurtido[]): MetricasSurtido {
@@ -88,12 +89,8 @@ export function metricasSurtido(pedidos: PedidoSurtido[]): MetricasSurtido {
     completados,
     enProceso: pedidos.filter((p) => p.estado === 'surtiendo').length,
     pctCompletados: pct(completados, pedidos.length),
+    totalLineas: pedidos.reduce((acc, p) => acc + (p.lineas ?? 0), 0),
   }
-}
-
-/** Avance de un pedido individual, en porcentaje de unidades surtidas. */
-export function avanceSurtido(pedido: PedidoSurtido): number {
-  return pct(pedido.unidadesSurtidas, pedido.unidadesTotales)
 }
 
 // ---------------------------------------------------------------------------
@@ -166,34 +163,46 @@ export function ordenarPorFechaCreacionDesc<T extends { fechaCreacion: string }>
 // ---------------------------------------------------------------------------
 // Productividad
 // ---------------------------------------------------------------------------
+// El registro guarda el turno completo: `unidades` procesadas en `horas`
+// trabajadas contra una `meta` de unidades del turno. De ahí salen dos lecturas
+// distintas — el ritmo (unidades por hora) y el cumplimiento (unidades vs meta).
 
-/** Cumplimiento de un registro frente a su meta, en porcentaje. */
+/** Ritmo del turno, en unidades por hora. */
+export function unidadesPorHora(registro: RegistroProductividad): number {
+  if (!registro.horas) return 0
+  return Math.round(registro.unidades / registro.horas)
+}
+
+/** Cumplimiento del turno frente a su meta de unidades, en porcentaje. */
 export function cumplimientoRegistro(registro: RegistroProductividad): number {
-  return pct(registro.unidadesPorHora, registro.metaUnidadesPorHora)
+  return pct(registro.unidades, registro.meta)
+}
+
+export function cumpleMeta(registro: RegistroProductividad): boolean {
+  return cumplimientoRegistro(registro) >= 100
 }
 
 export interface MetricasProductividad {
   total: number
   promedioUnidadesHora: number
   pctCumplimientoMeta: number
+  turnosBajoMeta: number
 }
 
 export function metricasProductividad(
   registros: RegistroProductividad[],
 ): MetricasProductividad {
   if (registros.length === 0) {
-    return { total: 0, promedioUnidadesHora: 0, pctCumplimientoMeta: 0 }
+    return { total: 0, promedioUnidadesHora: 0, pctCumplimientoMeta: 0, turnosBajoMeta: 0 }
   }
 
-  const sumaUnidades = registros.reduce((acc, r) => acc + r.unidadesPorHora, 0)
-  const sumaCumplimiento = registros.reduce(
-    (acc, r) => acc + (r.metaUnidadesPorHora > 0 ? r.unidadesPorHora / r.metaUnidadesPorHora : 0),
-    0,
-  )
+  const sumaRitmo = registros.reduce((acc, r) => acc + unidadesPorHora(r), 0)
+  const sumaCumplimiento = registros.reduce((acc, r) => acc + cumplimientoRegistro(r), 0)
 
   return {
     total: registros.length,
-    promedioUnidadesHora: Math.round(sumaUnidades / registros.length),
-    pctCumplimientoMeta: Math.round((sumaCumplimiento / registros.length) * 100),
+    promedioUnidadesHora: Math.round(sumaRitmo / registros.length),
+    pctCumplimientoMeta: Math.round(sumaCumplimiento / registros.length),
+    turnosBajoMeta: registros.filter((r) => !cumpleMeta(r)).length,
   }
 }

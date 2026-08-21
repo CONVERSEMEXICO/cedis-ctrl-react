@@ -1,5 +1,11 @@
 // Capa de acceso a datos: intenta leer de la GraphQL API de Microsoft Fabric
 // y usa los datos seed como respaldo cuando la API no está conectada o falla.
+//
+// Dos formas de consumir cada conjunto:
+//   - `cargarX()`   → { datos, offline }; lo usan las vistas que muestran el
+//                     banner "Modo offline — datos de demostración".
+//   - `obtenerX()`  → solo los datos; para el dashboard y el shell, donde el
+//                     origen no cambia lo que se pinta.
 
 import {
   getEmbarques,
@@ -26,36 +32,68 @@ import type {
   RegistroProductividad,
 } from '@/types/cedis'
 
-async function withFallback<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+export interface ResultadoDatos<T> {
+  datos: T
+  /** true cuando la API falló y lo que se ve son datos de demostración. */
+  offline: boolean
+}
+
+async function conRespaldo<T>(fn: () => Promise<T>, respaldo: T): Promise<ResultadoDatos<T>> {
   try {
-    return await fn()
+    return { datos: await fn(), offline: false }
   } catch {
-    return fallback
+    return { datos: respaldo, offline: true }
   }
 }
 
+export async function cargarEmbarques(): Promise<ResultadoDatos<Embarque[]>> {
+  return conRespaldo(() => getEmbarques(), embarquesSeed)
+}
+
+export async function cargarRecepciones(): Promise<ResultadoDatos<Recepcion[]>> {
+  return conRespaldo(() => getRecepciones(), recepcionesSeed)
+}
+
+export async function cargarPedidosSurtido(): Promise<ResultadoDatos<PedidoSurtido[]>> {
+  return conRespaldo(() => getPedidosSurtido(), pedidosSurtidoSeed)
+}
+
+export async function cargarLotesEtiquetado(): Promise<ResultadoDatos<LoteEtiquetado[]>> {
+  return conRespaldo(() => getLotesEtiquetado(), lotesEtiquetadoSeed)
+}
+
+export async function cargarIncidencias(): Promise<ResultadoDatos<Incidencia[]>> {
+  return conRespaldo(getIncidencias, incidenciasSeed)
+}
+
+export async function cargarRegistrosProductividad(): Promise<
+  ResultadoDatos<RegistroProductividad[]>
+> {
+  return conRespaldo(getRegistrosProductividad, registrosProductividadSeed)
+}
+
 export async function obtenerEmbarques(): Promise<Embarque[]> {
-  return withFallback(getEmbarques, embarquesSeed)
+  return (await cargarEmbarques()).datos
 }
 
 export async function obtenerRecepciones(): Promise<Recepcion[]> {
-  return withFallback(getRecepciones, recepcionesSeed)
+  return (await cargarRecepciones()).datos
 }
 
 export async function obtenerPedidosSurtido(): Promise<PedidoSurtido[]> {
-  return withFallback(getPedidosSurtido, pedidosSurtidoSeed)
+  return (await cargarPedidosSurtido()).datos
 }
 
 export async function obtenerLotesEtiquetado(): Promise<LoteEtiquetado[]> {
-  return withFallback(getLotesEtiquetado, lotesEtiquetadoSeed)
+  return (await cargarLotesEtiquetado()).datos
 }
 
 export async function obtenerIncidencias(): Promise<Incidencia[]> {
-  return withFallback(getIncidencias, incidenciasSeed)
+  return (await cargarIncidencias()).datos
 }
 
 export async function obtenerRegistrosProductividad(): Promise<RegistroProductividad[]> {
-  return withFallback(getRegistrosProductividad, registrosProductividadSeed)
+  return (await cargarRegistrosProductividad()).datos
 }
 
 export async function obtenerDatosCedis() {

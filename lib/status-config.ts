@@ -8,13 +8,25 @@ import type {
   EstadoRecepcion,
   EstadoSurtido,
   ModuloOperativo,
+  Prioridad,
   Severidad,
+  Turno,
 } from '@/types/cedis'
 
 export interface EstadoConfig {
   label: string
   dotClass: string
   badgeClass: string
+}
+
+export interface Opcion<T extends string = string> {
+  value: T
+  label: string
+}
+
+/** Lista de opciones para los selects, derivada del mapa de configuración. */
+function opciones<E extends string>(config: Record<E, EstadoConfig>): Opcion<E>[] {
+  return (Object.keys(config) as E[]).map((valor) => ({ value: valor, label: config[valor].label }))
 }
 
 export const ESTADO_EMBARQUE: Record<EstadoEmbarque, EstadoConfig> = {
@@ -196,6 +208,52 @@ export const MODULO_LABEL: Record<ModuloOperativo, string> = {
   productividad: 'Productividad',
   incidencias: 'Incidencias',
 }
+
+/** Prioridad de un pedido de surtido — la tabla la guarda capitalizada. */
+export const PRIORIDAD_CONFIG: Record<Prioridad, EstadoConfig> = {
+  Alta: {
+    label: 'Alta',
+    dotClass: 'bg-destructive',
+    badgeClass: 'bg-destructive/15 text-destructive',
+  },
+  Media: {
+    label: 'Media',
+    dotClass: 'bg-warning',
+    badgeClass: 'bg-warning/15 text-warning',
+  },
+  Baja: {
+    label: 'Baja',
+    dotClass: 'bg-muted-foreground',
+    badgeClass: 'bg-secondary text-secondary-foreground',
+  },
+}
+
+export const TURNO_LABEL: Record<Turno, string> = {
+  matutino: 'Matutino',
+  vespertino: 'Vespertino',
+  nocturno: 'Nocturno',
+}
+
+// Opciones para los selects de las vistas de módulo.
+export const ESTADOS_EMBARQUE = opciones(ESTADO_EMBARQUE)
+export const ESTADOS_RECEPCION = opciones(ESTADO_RECEPCION)
+export const ESTADOS_SURTIDO = opciones(ESTADO_SURTIDO)
+export const ESTADOS_ETIQUETADO = opciones(ESTADO_ETIQUETADO)
+export const PRIORIDADES = opciones(PRIORIDAD_CONFIG)
+
+export const TURNOS: Opcion<Turno>[] = [
+  { value: 'matutino', label: 'Matutino' },
+  { value: 'vespertino', label: 'Vespertino' },
+  { value: 'nocturno', label: 'Nocturno' },
+]
+
+/** Áreas del CEDIS que se capturan en productividad. */
+export const AREAS: Opcion[] = [
+  { value: 'Surtido', label: 'Surtido' },
+  { value: 'Etiquetado', label: 'Etiquetado' },
+  { value: 'Recepciones', label: 'Recepciones' },
+  { value: 'Embarques', label: 'Embarques' },
+]
 
 export const MODULO_DOT_CLASS: Record<ModuloOperativo, string> = {
   embarques: 'bg-embarques',

@@ -26,12 +26,13 @@ Proyecto generado con v0.app, que **sigue en uso ocasional** para retoques de UI
 Tres archivos encadenados, y es la parte del código que hay que entender antes de tocar datos:
 
 - [lib/graphql.ts](lib/graphql.ts) — cliente `fetchGraphQL` genérico contra la GraphQL API de **Microsoft Fabric SQL Database**. Lee `FABRIC_GRAPHQL_ENDPOINT` y `FABRIC_AUTH_TOKEN` de env; si el endpoint está vacío lanza `GraphQLRequestError` de inmediato. Usa `cache: 'no-store'`.
-- [lib/queries.ts](lib/queries.ts) — una función por operación (`getEmbarques`, `crearIncidencia`, `actualizarEstadoSurtido`, …). **Los documentos GraphQL son stubs vacíos con `# TODO: completar query`**; solo las firmas y los tipos de retorno están definidos. Al implementar una query real, completa el documento aquí sin cambiar la firma.
-- [lib/data.ts](lib/data.ts) — envuelve cada query en `withFallback()`, que hace `try/catch` y devuelve los arreglos de [lib/seed-data.ts](lib/seed-data.ts) cuando la API falla. **Hoy la app siempre corre con datos seed**, porque las queries están vacías. Las páginas deben importar exclusivamente de `lib/data.ts`, nunca de `lib/queries.ts` ni de `lib/seed-data.ts` directamente.
+- [lib/queries.ts](lib/queries.ts) — una función por operación. Los cinco módulos con tabla publicada (embarques, recepciones, surtido, etiquetado, productividad) tienen su documento GraphQL real; **incidencias sigue en stub `# TODO`** porque esa tabla todavía no está expuesta en la API. Convenciones del esquema de Fabric que hay que respetar tal cual: toda query devuelve un Connection (`{ items, endCursor, hasNextPage }`), la pluralización la decide Fabric (`surtidos`, `etiquetados`, `productividads`) aunque los `*Input` conserven el nombre de la tabla, y **los cambios de estado van por stored procedure** (`executeActualizarEstado*`, `executeRegistrarProductividad`), nunca por las mutations update genéricas. Los SP viven en [sql/](sql/).
+- [lib/data.ts](lib/data.ts) — envuelve cada query en `conRespaldo()`, que hace `try/catch` y devuelve los arreglos de [lib/seed-data.ts](lib/seed-data.ts) cuando la API falla. Las páginas deben importar exclusivamente de `lib/data.ts`, nunca de `lib/queries.ts` ni de `lib/seed-data.ts` directamente.
+- [lib/actions.ts](lib/actions.ts) — server actions (`'use server'`), la única vía de escritura: el `FABRIC_AUTH_TOKEN` no puede salir al navegador. Cada acción devuelve `ResultadoAccion` (`{ ok }` / `{ ok: false, error }`) en vez de lanzar, y revalida `'/'` con scope `layout` para refrescar tabla, dashboard y conteos del sidebar de una sola vez.
 
-`obtenerDatosCedis()` trae los seis conjuntos en paralelo; las páginas de módulo usan el `obtenerX()` individual.
+`obtenerDatosCedis()` trae los seis conjuntos en paralelo; las páginas de módulo usan `cargarX()`, que además dice si hubo fallback (`offline`) para pintar `<BannerOffline />`. `obtenerX()` es el mismo dato sin esa bandera.
 
-Consecuencia práctica: los errores de red se tragan silenciosamente. Si una página muestra datos que "no cambian", casi siempre es el fallback actuando.
+Las entidades de `types/cedis.ts` espejean columna por columna las tablas de Fabric, snake_case incluido (`hora_salida`, `motivo_rechazo`, `created_at`): no hay capa de mapeo, así que renombrar un campo del esquema es renombrarlo aquí.
 
 ### Indicadores: `lib/metrics.ts`
 
@@ -43,21 +44,30 @@ Está separado a propósito: v0 regenera archivos completos, y las páginas son 
 
 ### Módulos operativos
 
-Seis módulos —`embarques`, `recepciones`, `surtido`, `etiquetado`, `productividad`, `incidencias`— aparecen replicados en cinco lugares que deben mantenerse sincronizados al agregar o renombrar uno:
+Seis módulos —`embarques`, `recepciones`, `surtido`, `etiquetado`, `productividad`, `incidencias`— aparecen replicados en seis lugares que deben mantenerse sincronizados al agregar o renombrar uno:
 
 1. `ModuloOperativo` y las entidades/estados en [types/cedis.ts](types/cedis.ts)
-2. seed + query + wrapper en `lib/`
+2. seed + query + acción + wrapper en `lib/`
 3. agregados en [lib/metrics.ts](lib/metrics.ts)
 4. mapas `ESTADO_*`, `MODULO_LABEL`, `MODULO_DOT_CLASS` en [lib/status-config.ts](lib/status-config.ts)
-5. `NAV_ITEMS` en [components/layout/sidebar-nav.tsx](components/layout/sidebar-nav.tsx) y `TITULOS` en [components/layout/topbar.tsx](components/layout/topbar.tsx)
+5. config y vista en [components/modulos/configs.tsx](components/modulos/configs.tsx)
+6. `NAV_ITEMS` en [components/layout/sidebar-nav.tsx](components/layout/sidebar-nav.tsx), `TITULOS` y `MODULO_POR_RUTA` en [components/layout/topbar.tsx](components/layout/topbar.tsx)
 
 Cada estado de cada módulo se declara en `status-config.ts` como `{ label, dotClass, badgeClass }` y se renderiza con `<EstadoBadge config={ESTADO_X[estado]} />`. No escribas clases de estado a mano en las páginas.
 
+### Vista de control compartida
+
+Los cuatro módulos operativos con tabla (embarques, recepciones, surtido, etiquetado) **no tienen UI propia**: los cuatro renderizan [`<ModuleControlView>`](components/modulos/module-control-view.tsx) —filtro por estatus, "Mostrando X de Y", alta, select de estatus por renglón, borrado con confirmación— y lo único que cambia es la `ConfigModulo` de [components/modulos/configs.tsx](components/modulos/configs.tsx): columnas, campos del alta y qué server action invoca cada operación. **Al tocar el comportamiento de un módulo, edita su config, no la vista.**
+
+Casos especiales que ya resuelve la config: etiquetado declara `estadoQuePideMotivo: 'rechazado'` (el SP exige motivo), y surtido/recepciones reenvían `operador` / `anden` del propio registro porque sus SP los conservan con `COALESCE`.
+
 ### Server components por defecto
 
-`app/layout.tsx` → `AppShell` (server, hace el fetch de conteos para el sidebar) → `SidebarNav` + `Topbar` (client, por `usePathname`) + `main`. Cada `app/<modulo>/page.tsx` es un server component `async` que hace su propio fetch, llama a `lib/metrics.ts` y renderiza `PageHeader` + tabla o tarjetas. Solo son `'use client'` los charts (recharts), el sidebar, el topbar y el diálogo de incidencias.
+`app/layout.tsx` → `AppShell` (server, hace el fetch de conteos para el sidebar) → `SidebarNav` + `Topbar` (client, por `usePathname`) + `main`. Cada `app/<modulo>/page.tsx` es un server component `async` que hace su propio fetch, llama a `lib/metrics.ts` y renderiza `PageHeader` + la vista del módulo. Son `'use client'` los charts (recharts), el sidebar, el topbar, los diálogos y `components/modulos/`.
 
-El diálogo de [reportar-incidencia](components/incidencias/reportar-incidencia-dialog.tsx) hoy **no persiste nada**: `handleSubmit` solo lanza un toast. Conectarlo implica una server action o un route handler que llame a `crearIncidencia`.
+El `Topbar` es contextual: arma el botón de alta del módulo activo desde `CREACION_POR_RUTA` y siempre muestra "Reportar incidencia" en rojo, con el módulo de la ruta preseleccionado.
+
+El diálogo de [reportar-incidencia](components/incidencias/reportar-incidencia-dialog.tsx) hoy **no persiste nada**: `handleSubmit` solo lanza un toast. Conectarlo implica exponer la tabla `incidencias` en la API, completar sus queries y agregar la acción que llame a `executeCrearIncidencia` (el SP ya existe en [sql/05_sp_incidencias.sql](sql/05_sp_incidencias.sql)).
 
 ### UI: shadcn sobre Base UI (no Radix)
 
@@ -98,6 +108,8 @@ Fronteras de propiedad que reducen la colisión:
 | Zona | Dueño | Archivos |
 |---|---|---|
 | Presentación | v0 | `components/ui/`, `components/dashboard/`, `components/layout/`, `app/globals.css`, el JSX de `app/*/page.tsx` |
-| Datos y dominio | humanos | `lib/` (todo), `types/cedis.ts`, server actions, `next.config.mjs` |
+| Datos y dominio | humanos | `lib/` (todo), `types/cedis.ts`, `components/modulos/`, `next.config.mjs` |
+
+`components/modulos/` es presentación pero está cableado a las server actions: si v0 lo regenera, las mutaciones se rompen en silencio.
 
 Ramas: `feat/*` y `chore/*` para trabajo a mano, `v0/*` para lo que empuja v0. Sin `develop` — las preview URLs de Vercel cubren esa función.

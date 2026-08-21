@@ -6,7 +6,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ReportarIncidenciaDialog } from '@/components/incidencias/reportar-incidencia-dialog'
 import { EstadoBadge } from '@/components/shared/estado-badge'
 import { PageHeader } from '@/components/shared/page-header'
 import { obtenerIncidencias } from '@/lib/data'
@@ -46,7 +45,6 @@ export default async function IncidenciasPage() {
               </span>
               <span className="text-xs text-muted-foreground">críticas</span>
             </div>
-            <ReportarIncidenciaDialog />
           </div>
         }
       />
