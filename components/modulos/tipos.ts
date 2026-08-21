@@ -44,7 +44,7 @@ export interface ConfigCreacion {
   /** Campo que hace las veces de folio: 'folio' | 'pedido' | 'lote'. */
   campoFolio: string
   campos: CampoCreacion[]
-  crear: (valores: Record<string, string>) => Promise<ResultadoAccion>
+  crear: (token: string | null, valores: Record<string, string>) => Promise<ResultadoAccion>
 }
 
 export interface ConfigModulo<T extends RegistroBase> extends ConfigCreacion {
@@ -53,8 +53,13 @@ export interface ConfigModulo<T extends RegistroBase> extends ConfigCreacion {
   estados: Opcion[]
   estadoConfig: Record<string, EstadoConfig>
   columnas: ColumnaModulo<T>[]
-  cambiarEstado: (registro: T, estado: string, motivoRechazo?: string) => Promise<ResultadoAccion>
-  eliminar: (id: string) => Promise<ResultadoAccion>
+  cambiarEstado: (
+    token: string | null,
+    registro: T,
+    estado: string,
+    motivoRechazo?: string,
+  ) => Promise<ResultadoAccion>
+  eliminar: (token: string | null, id: string) => Promise<ResultadoAccion>
   /** Estado que exige capturar un motivo antes de aplicarse ('rechazado'). */
   estadoQuePideMotivo?: string
 }

@@ -1,13 +1,15 @@
 'use client'
 
 import { RefreshCw } from 'lucide-react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ReportarIncidenciaDialog } from '@/components/incidencias/reportar-incidencia-dialog'
 import { CREACION_POR_RUTA } from '@/components/modulos/configs'
 import { CrearRegistroDialog } from '@/components/modulos/crear-registro-dialog'
 import { RegistrarTurnoDialog } from '@/components/productividad/registrar-turno-dialog'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import type { ModuloOperativo } from '@/types/cedis'
 
 const TITULOS: Record<string, string> = {
@@ -47,7 +49,7 @@ function useFechaLarga() {
 
 export function Topbar() {
   const pathname = usePathname()
-  const router = useRouter()
+  const { cargando, refrescar } = useDatosCedis()
   const fecha = useFechaLarga()
   const titulo = TITULOS[pathname] ?? 'CEDIS ·CTRL'
   const creacion = CREACION_POR_RUTA[pathname]
@@ -62,8 +64,8 @@ export function Topbar() {
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => router.refresh()}>
-          <RefreshCw data-icon="inline-start" />
+        <Button variant="outline" size="sm" onClick={() => void refrescar()} disabled={cargando}>
+          <RefreshCw className={cn(cargando && 'animate-spin')} data-icon="inline-start" />
           <span className="hidden sm:inline">Actualizar</span>
         </Button>
         {creacion && <CrearRegistroDialog config={creacion} />}

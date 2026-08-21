@@ -4,10 +4,8 @@
 // de la vista del módulo como el topbar, con la misma `ConfigCreacion`.
 
 import { Plus } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { toast } from 'sonner'
-import { ERROR_GUARDAR, type ConfigCreacion } from '@/components/modulos/tipos'
+import type { ConfigCreacion } from '@/components/modulos/tipos'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -29,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useOperacionCedis } from '@/hooks/use-operacion-cedis'
 
 function valoresIniciales(config: ConfigCreacion): Record<string, string> {
   const valores: Record<string, string> = {}
@@ -44,7 +43,7 @@ function folioAutomatico(prefijo: string): string {
 }
 
 export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
-  const router = useRouter()
+  const { ejecutar } = useOperacionCedis()
   const [abierto, setAbierto] = useState(false)
   const [valores, setValores] = useState<Record<string, string>>(() => valoresIniciales(config))
   const [enviando, setEnviando] = useState(false)
@@ -63,18 +62,16 @@ export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
     }
 
     setEnviando(true)
-    const resultado = await config.crear(datos)
+    const creado = await ejecutar(
+      (token) => config.crear(token, datos),
+      'Registro creado correctamente',
+    )
     setEnviando(false)
 
-    if (!resultado.ok) {
-      toast.error(ERROR_GUARDAR, { description: resultado.error })
-      return
-    }
+    if (!creado) return
 
-    toast.success('Registro creado correctamente')
     setValores(valoresIniciales(config))
     setAbierto(false)
-    router.refresh()
   }
 
   return (

@@ -1,12 +1,15 @@
+'use client'
+
 import { EmbarquesControl } from '@/components/modulos/configs'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { BannerOffline } from '@/components/shared/banner-offline'
 import { PageHeader } from '@/components/shared/page-header'
-import { cargarEmbarques } from '@/lib/data'
 import { formatNumero } from '@/lib/format'
 import { metricasEmbarques } from '@/lib/metrics'
 
-export default async function EmbarquesPage() {
-  const { datos: embarques, offline } = await cargarEmbarques()
+export default function EmbarquesPage() {
+  const { datos, offline } = useDatosCedis()
+  const embarques = datos.embarques
   const { totalUnidades, retrasados } = metricasEmbarques(embarques)
 
   return (
@@ -33,7 +36,7 @@ export default async function EmbarquesPage() {
         }
       />
 
-      {offline && <BannerOffline />}
+      {offline.embarques && <BannerOffline />}
 
       <EmbarquesControl registros={embarques} />
     </div>

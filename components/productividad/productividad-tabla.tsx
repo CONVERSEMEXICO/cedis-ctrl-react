@@ -1,13 +1,10 @@
 'use client'
 
-// Detalle de turnos capturados. Es client component solo por el borrado: el
-// resto (KPIs y gráfica) se calcula en el server.
+// Detalle de turnos capturados: el borrado va por lib/actions.ts con el token
+// de Entra ID que consigue `useOperacionCedis`.
 
 import { X } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
-import { toast } from 'sonner'
-import { ERROR_GUARDAR } from '@/components/modulos/tipos'
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useOperacionCedis } from '@/hooks/use-operacion-cedis'
 import { accionEliminarRegistroProductividad } from '@/lib/actions'
 import { formatDecimal, formatNumero } from '@/lib/format'
 import { cumplimientoRegistro, cumpleMeta, unidadesPorHora } from '@/lib/metrics'
@@ -37,26 +35,20 @@ import type { RegistroProductividad } from '@/types/cedis'
 const CLASE_NUMERO = 'text-right font-mono tabular-nums'
 
 export function ProductividadTabla({ registros }: { registros: RegistroProductividad[] }) {
-  const router = useRouter()
-  const [, iniciarTransicion] = useTransition()
+  const { ejecutar } = useOperacionCedis()
   const [idEnCurso, setIdEnCurso] = useState<string | null>(null)
   const [aEliminar, setAEliminar] = useState<RegistroProductividad | null>(null)
 
-  function confirmarEliminar() {
+  async function confirmarEliminar() {
     const registro = aEliminar
     if (!registro) return
     setAEliminar(null)
     setIdEnCurso(registro.id)
-    iniciarTransicion(async () => {
-      const resultado = await accionEliminarRegistroProductividad(registro.id)
-      setIdEnCurso(null)
-      if (!resultado.ok) {
-        toast.error(ERROR_GUARDAR, { description: resultado.error })
-        return
-      }
-      toast.success('Registro eliminado')
-      router.refresh()
-    })
+    await ejecutar(
+      (token) => accionEliminarRegistroProductividad(token, registro.id),
+      'Registro eliminado',
+    )
+    setIdEnCurso(null)
   }
 
   return (

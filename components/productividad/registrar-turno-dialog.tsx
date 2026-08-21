@@ -5,10 +5,7 @@
 // idempotente sobre el id — por eso el id se genera aquí, en el cliente.
 
 import { Plus } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { toast } from 'sonner'
-import { ERROR_GUARDAR } from '@/components/modulos/tipos'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -30,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useOperacionCedis } from '@/hooks/use-operacion-cedis'
 import { accionRegistrarProductividad } from '@/lib/actions'
 import { AREAS, TURNOS } from '@/lib/status-config'
 import type { Turno } from '@/types/cedis'
@@ -51,7 +49,7 @@ function nuevoId(): string {
 }
 
 export function RegistrarTurnoDialog() {
-  const router = useRouter()
+  const { ejecutar } = useOperacionCedis()
   const [abierto, setAbierto] = useState(false)
   const [valores, setValores] = useState(VALORES_INICIALES)
   const [enviando, setEnviando] = useState(false)
@@ -65,26 +63,25 @@ export function RegistrarTurnoDialog() {
     if (enviando) return
 
     setEnviando(true)
-    const resultado = await accionRegistrarProductividad({
-      id: nuevoId(),
-      operador: valores.operador.trim(),
-      area: valores.area,
-      turno: valores.turno as Turno,
-      unidades: Number(valores.unidades),
-      horas: Number(valores.horas),
-      meta: Number(valores.meta),
-    })
+    const creado = await ejecutar(
+      (token) =>
+        accionRegistrarProductividad(token, {
+          id: nuevoId(),
+          operador: valores.operador.trim(),
+          area: valores.area,
+          turno: valores.turno as Turno,
+          unidades: Number(valores.unidades),
+          horas: Number(valores.horas),
+          meta: Number(valores.meta),
+        }),
+      'Registro creado correctamente',
+    )
     setEnviando(false)
 
-    if (!resultado.ok) {
-      toast.error(ERROR_GUARDAR, { description: resultado.error })
-      return
-    }
+    if (!creado) return
 
-    toast.success('Registro creado correctamente')
     setValores(VALORES_INICIALES)
     setAbierto(false)
-    router.refresh()
   }
 
   return (

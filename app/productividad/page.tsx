@@ -1,3 +1,5 @@
+'use client'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   ProductividadChart,
@@ -5,14 +7,15 @@ import {
 } from '@/components/productividad/productividad-chart'
 import { ProductividadTabla } from '@/components/productividad/productividad-tabla'
 import { RegistrarTurnoDialog } from '@/components/productividad/registrar-turno-dialog'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { BannerOffline } from '@/components/shared/banner-offline'
 import { PageHeader } from '@/components/shared/page-header'
-import { cargarRegistrosProductividad } from '@/lib/data'
 import { formatNumero } from '@/lib/format'
 import { metricasProductividad, unidadesPorHora } from '@/lib/metrics'
 
-export default async function ProductividadPage() {
-  const { datos: registros, offline } = await cargarRegistrosProductividad()
+export default function ProductividadPage() {
+  const { datos, offline } = useDatosCedis()
+  const registros = datos.productividad
   const { promedioUnidadesHora, pctCumplimientoMeta, turnosBajoMeta } =
     metricasProductividad(registros)
 
@@ -30,7 +33,7 @@ export default async function ProductividadPage() {
         actions={<RegistrarTurnoDialog />}
       />
 
-      {offline && <BannerOffline />}
+      {offline.productividad && <BannerOffline />}
 
       <section aria-label="Indicadores de productividad">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

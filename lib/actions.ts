@@ -1,14 +1,14 @@
-'use server'
-
-// Server actions de los módulos operativos.
+// Operaciones de escritura de los módulos operativos.
 //
-// La UI es interactiva pero el token de Fabric (FABRIC_AUTH_TOKEN) nunca puede
-// salir al navegador: toda mutación pasa por aquí. Cada acción devuelve un
-// `ResultadoAccion` en vez de lanzar, para que la vista muestre el toast de
-// error sin romper el render, y revalida el layout raíz para refrescar la
-// tabla del módulo, el dashboard y los conteos del sidebar de una sola vez.
+// Ya no son server actions: con Entra ID el token es del usuario y vive en el
+// navegador (sessionStorage, vía MSAL), así que la mutación sale del cliente y
+// cada operación recibe el token como primer argumento. Sigue el mismo
+// contrato de antes —devuelven `ResultadoAccion` en vez de lanzar, para que la
+// vista muestre el toast de error sin romper el render—, pero el refresco ya no
+// es `revalidatePath`: lo hace <ProveedorDatosCedis> con `refrescar()`, que es
+// lo que usa el hook `useOperacionCedis`.
 
-import { revalidatePath } from 'next/cache'
+import { esSesionExpirada } from '@/lib/graphql'
 import {
   actualizarEstadoEmbarque,
   actualizarEstadoEtiquetado,
@@ -38,101 +38,126 @@ import type {
   ResultadoAccion,
 } from '@/types/cedis'
 
+type Token = string | null
+
 async function ejecutar(operacion: () => Promise<unknown>): Promise<ResultadoAccion> {
   try {
     await operacion()
-    revalidatePath('/', 'layout')
     return { ok: true }
   } catch (error) {
-    return { ok: false, error: (error as Error).message }
+    return {
+      ok: false,
+      error: (error as Error).message,
+      sesionExpirada: esSesionExpirada(error),
+    }
   }
 }
 
 // --- Embarques -------------------------------------------------------------
 
-export async function accionCrearEmbarque(item: CrearEmbarqueInput): Promise<ResultadoAccion> {
-  return ejecutar(() => crearEmbarque(item))
+export async function accionCrearEmbarque(
+  token: Token,
+  item: CrearEmbarqueInput,
+): Promise<ResultadoAccion> {
+  return ejecutar(() => crearEmbarque(token, item))
 }
 
 export async function accionActualizarEstadoEmbarque(
+  token: Token,
   id: string,
   estado: EstadoEmbarque,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoEmbarque(id, estado))
+  return ejecutar(() => actualizarEstadoEmbarque(token, id, estado))
 }
 
-export async function accionEliminarEmbarque(id: string): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarEmbarque(id))
+export async function accionEliminarEmbarque(token: Token, id: string): Promise<ResultadoAccion> {
+  return ejecutar(() => eliminarEmbarque(token, id))
 }
 
 // --- Recepciones -----------------------------------------------------------
 
-export async function accionCrearRecepcion(item: CrearRecepcionInput): Promise<ResultadoAccion> {
-  return ejecutar(() => crearRecepcion(item))
+export async function accionCrearRecepcion(
+  token: Token,
+  item: CrearRecepcionInput,
+): Promise<ResultadoAccion> {
+  return ejecutar(() => crearRecepcion(token, item))
 }
 
 export async function accionActualizarEstadoRecepcion(
+  token: Token,
   id: string,
   estado: EstadoRecepcion,
   anden?: string | null,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoRecepcion(id, estado, anden))
+  return ejecutar(() => actualizarEstadoRecepcion(token, id, estado, anden))
 }
 
-export async function accionEliminarRecepcion(id: string): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarRecepcion(id))
+export async function accionEliminarRecepcion(token: Token, id: string): Promise<ResultadoAccion> {
+  return ejecutar(() => eliminarRecepcion(token, id))
 }
 
 // --- Surtido ---------------------------------------------------------------
 
 export async function accionCrearPedidoSurtido(
+  token: Token,
   item: CrearSurtidoInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => crearPedidoSurtido(item))
+  return ejecutar(() => crearPedidoSurtido(token, item))
 }
 
 export async function accionActualizarEstadoSurtido(
+  token: Token,
   id: string,
   estado: EstadoSurtido,
   operador?: string | null,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoSurtido(id, estado, operador))
+  return ejecutar(() => actualizarEstadoSurtido(token, id, estado, operador))
 }
 
-export async function accionEliminarPedidoSurtido(id: string): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarPedidoSurtido(id))
+export async function accionEliminarPedidoSurtido(
+  token: Token,
+  id: string,
+): Promise<ResultadoAccion> {
+  return ejecutar(() => eliminarPedidoSurtido(token, id))
 }
 
 // --- Etiquetado ------------------------------------------------------------
 
 export async function accionCrearLoteEtiquetado(
+  token: Token,
   item: CrearEtiquetadoInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => crearLoteEtiquetado(item))
+  return ejecutar(() => crearLoteEtiquetado(token, item))
 }
 
 export async function accionActualizarEstadoEtiquetado(
+  token: Token,
   id: string,
   estado: EstadoEtiquetado,
   motivoRechazo?: string | null,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoEtiquetado(id, estado, motivoRechazo))
+  return ejecutar(() => actualizarEstadoEtiquetado(token, id, estado, motivoRechazo))
 }
 
-export async function accionEliminarLoteEtiquetado(id: string): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarLoteEtiquetado(id))
+export async function accionEliminarLoteEtiquetado(
+  token: Token,
+  id: string,
+): Promise<ResultadoAccion> {
+  return ejecutar(() => eliminarLoteEtiquetado(token, id))
 }
 
 // --- Productividad ---------------------------------------------------------
 
 export async function accionRegistrarProductividad(
+  token: Token,
   input: RegistrarProductividadInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => registrarProductividad(input))
+  return ejecutar(() => registrarProductividad(token, input))
 }
 
 export async function accionEliminarRegistroProductividad(
+  token: Token,
   id: string,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarRegistroProductividad(id))
+  return ejecutar(() => eliminarRegistroProductividad(token, id))
 }

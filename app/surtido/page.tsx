@@ -1,12 +1,15 @@
+'use client'
+
 import { SurtidoControl } from '@/components/modulos/configs'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { BannerOffline } from '@/components/shared/banner-offline'
 import { PageHeader } from '@/components/shared/page-header'
-import { cargarPedidosSurtido } from '@/lib/data'
 import { formatNumero } from '@/lib/format'
 import { metricasSurtido } from '@/lib/metrics'
 
-export default async function SurtidoPage() {
-  const { datos: pedidos, offline } = await cargarPedidosSurtido()
+export default function SurtidoPage() {
+  const { datos, offline } = useDatosCedis()
+  const pedidos = datos.pedidosSurtido
   const { enProceso, totalLineas } = metricasSurtido(pedidos)
 
   return (
@@ -33,7 +36,7 @@ export default async function SurtidoPage() {
         }
       />
 
-      {offline && <BannerOffline />}
+      {offline.pedidosSurtido && <BannerOffline />}
 
       <SurtidoControl registros={pedidos} />
     </div>

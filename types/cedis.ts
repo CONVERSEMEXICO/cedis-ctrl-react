@@ -135,5 +135,8 @@ export interface RegistroProductividad {
   created_at: string
 }
 
-/** Contrato uniforme de las server actions de lib/actions.ts. */
-export type ResultadoAccion = { ok: true } | { ok: false; error: string }
+/** Contrato uniforme de las operaciones de escritura de lib/actions.ts. */
+export type ResultadoAccion =
+  | { ok: true }
+  /** `sesionExpirada` distingue el 401 de Fabric: hay que volver a entrar. */
+  | { ok: false; error: string; sesionExpirada: boolean }

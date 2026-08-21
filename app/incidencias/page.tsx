@@ -1,3 +1,5 @@
+'use client'
+
 import {
   Table,
   TableBody,
@@ -6,9 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { EstadoBadge } from '@/components/shared/estado-badge'
 import { PageHeader } from '@/components/shared/page-header'
-import { obtenerIncidencias } from '@/lib/data'
 import { formatFechaHora } from '@/lib/format'
 import { metricasIncidencias, ordenarPorFechaCreacionDesc } from '@/lib/metrics'
 import {
@@ -20,8 +22,9 @@ import {
 } from '@/lib/status-config'
 import { cn } from '@/lib/utils'
 
-export default async function IncidenciasPage() {
-  const incidencias = await obtenerIncidencias()
+export default function IncidenciasPage() {
+  const { datos } = useDatosCedis()
+  const incidencias = datos.incidencias
   const { abiertas, criticas } = metricasIncidencias(incidencias)
   const ordenadas = ordenarPorFechaCreacionDesc(incidencias)
 

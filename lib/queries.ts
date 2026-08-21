@@ -1,5 +1,9 @@
 // Queries y mutations contra la GraphQL API de Microsoft Fabric SQL Database.
 //
+// Toda operación recibe como primer argumento el token de Entra ID que MSAL
+// obtuvo en el navegador (ver hooks/use-fabric-auth.ts). Con token null la
+// petición no sale y lib/data.ts cae al respaldo seed.
+//
 // Convenciones del esquema que genera Fabric y que hay que respetar tal cual:
 //   - Toda query devuelve un Connection: { items, endCursor, hasNextPage }.
 //   - La pluralización la decide Fabric: `surtidos`, `etiquetados`,
@@ -36,6 +40,9 @@ interface Conexion<T> {
   endCursor: string | null
 }
 
+/** Token de acceso de Entra ID; null cuando no hay sesión. */
+type Token = string | null
+
 /** Tope de registros por consulta: la operación diaria del CEDIS cabe de sobra. */
 const LIMITE = 100
 
@@ -67,7 +74,7 @@ export interface CrearEmbarqueInput {
   estado?: EstadoEmbarque
 }
 
-export async function getEmbarques(estado?: EstadoEmbarque): Promise<Embarque[]> {
+export async function getEmbarques(token: Token, estado?: EstadoEmbarque): Promise<Embarque[]> {
   const QUERY = /* GraphQL */ `
     query GetEmbarques($filter: embarquesFilterInput, $orderBy: embarquesOrderByInput) {
       embarques(first: ${LIMITE}, filter: $filter, orderBy: $orderBy) {
@@ -77,24 +84,26 @@ export async function getEmbarques(estado?: EstadoEmbarque): Promise<Embarque[]>
       }
     }
   `
-  const datos = await fetchGraphQL<{ embarques: Conexion<Embarque> }>(QUERY, {
-    filter: filtroEstado(estado),
-    orderBy: ORDEN_RECIENTE,
-  })
+  const datos = await fetchGraphQL<{ embarques: Conexion<Embarque> }>(
+    QUERY,
+    { filter: filtroEstado(estado), orderBy: ORDEN_RECIENTE },
+    token,
+  )
   return datos.embarques.items
 }
 
-export async function crearEmbarque(item: CrearEmbarqueInput): Promise<Embarque> {
+export async function crearEmbarque(token: Token, item: CrearEmbarqueInput): Promise<Embarque> {
   const MUTATION = /* GraphQL */ `
     mutation CrearEmbarque($item: CreateembarquesInput!) {
       createembarques(item: $item) { ${CAMPOS_EMBARQUE} }
     }
   `
-  const datos = await fetchGraphQL<{ createembarques: Embarque }>(MUTATION, { item })
+  const datos = await fetchGraphQL<{ createembarques: Embarque }>(MUTATION, { item }, token)
   return datos.createembarques
 }
 
 export async function actualizarEstadoEmbarque(
+  token: Token,
   id: string,
   estado: EstadoEmbarque,
 ): Promise<Embarque | null> {
@@ -103,20 +112,21 @@ export async function actualizarEstadoEmbarque(
       executeActualizarEstadoEmbarque(id: $id, estado: $estado) { ${CAMPOS_EMBARQUE} }
     }
   `
-  const datos = await fetchGraphQL<{ executeActualizarEstadoEmbarque: Embarque[] }>(MUTATION, {
-    id,
-    estado,
-  })
+  const datos = await fetchGraphQL<{ executeActualizarEstadoEmbarque: Embarque[] }>(
+    MUTATION,
+    { id, estado },
+    token,
+  )
   return datos.executeActualizarEstadoEmbarque[0] ?? null
 }
 
-export async function eliminarEmbarque(id: string): Promise<void> {
+export async function eliminarEmbarque(token: Token, id: string): Promise<void> {
   const MUTATION = /* GraphQL */ `
     mutation EliminarEmbarque($id: String!) {
       deleteembarques(id: $id) { id }
     }
   `
-  await fetchGraphQL<{ deleteembarques: { id: string } | null }>(MUTATION, { id })
+  await fetchGraphQL<{ deleteembarques: { id: string } | null }>(MUTATION, { id }, token)
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +142,7 @@ export interface CrearRecepcionInput {
   estado?: EstadoRecepcion
 }
 
-export async function getRecepciones(estado?: EstadoRecepcion): Promise<Recepcion[]> {
+export async function getRecepciones(token: Token, estado?: EstadoRecepcion): Promise<Recepcion[]> {
   const QUERY = /* GraphQL */ `
     query GetRecepciones($filter: recepcionesFilterInput, $orderBy: recepcionesOrderByInput) {
       recepciones(first: ${LIMITE}, filter: $filter, orderBy: $orderBy) {
@@ -142,24 +152,26 @@ export async function getRecepciones(estado?: EstadoRecepcion): Promise<Recepcio
       }
     }
   `
-  const datos = await fetchGraphQL<{ recepciones: Conexion<Recepcion> }>(QUERY, {
-    filter: filtroEstado(estado),
-    orderBy: ORDEN_RECIENTE,
-  })
+  const datos = await fetchGraphQL<{ recepciones: Conexion<Recepcion> }>(
+    QUERY,
+    { filter: filtroEstado(estado), orderBy: ORDEN_RECIENTE },
+    token,
+  )
   return datos.recepciones.items
 }
 
-export async function crearRecepcion(item: CrearRecepcionInput): Promise<Recepcion> {
+export async function crearRecepcion(token: Token, item: CrearRecepcionInput): Promise<Recepcion> {
   const MUTATION = /* GraphQL */ `
     mutation CrearRecepcion($item: CreaterecepcionesInput!) {
       createrecepciones(item: $item) { ${CAMPOS_RECEPCION} }
     }
   `
-  const datos = await fetchGraphQL<{ createrecepciones: Recepcion }>(MUTATION, { item })
+  const datos = await fetchGraphQL<{ createrecepciones: Recepcion }>(MUTATION, { item }, token)
   return datos.createrecepciones
 }
 
 export async function actualizarEstadoRecepcion(
+  token: Token,
   id: string,
   estado: EstadoRecepcion,
   anden?: string | null,
@@ -171,21 +183,21 @@ export async function actualizarEstadoRecepcion(
       }
     }
   `
-  const datos = await fetchGraphQL<{ executeActualizarEstadoRecepcion: Recepcion[] }>(MUTATION, {
-    id,
-    estado,
-    anden: anden ?? null,
-  })
+  const datos = await fetchGraphQL<{ executeActualizarEstadoRecepcion: Recepcion[] }>(
+    MUTATION,
+    { id, estado, anden: anden ?? null },
+    token,
+  )
   return datos.executeActualizarEstadoRecepcion[0] ?? null
 }
 
-export async function eliminarRecepcion(id: string): Promise<void> {
+export async function eliminarRecepcion(token: Token, id: string): Promise<void> {
   const MUTATION = /* GraphQL */ `
     mutation EliminarRecepcion($id: String!) {
       deleterecepciones(id: $id) { id }
     }
   `
-  await fetchGraphQL<{ deleterecepciones: { id: string } | null }>(MUTATION, { id })
+  await fetchGraphQL<{ deleterecepciones: { id: string } | null }>(MUTATION, { id }, token)
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +213,10 @@ export interface CrearSurtidoInput {
   estado?: EstadoSurtido
 }
 
-export async function getPedidosSurtido(estado?: EstadoSurtido): Promise<PedidoSurtido[]> {
+export async function getPedidosSurtido(
+  token: Token,
+  estado?: EstadoSurtido,
+): Promise<PedidoSurtido[]> {
   const QUERY = /* GraphQL */ `
     query GetSurtidos($filter: surtidoFilterInput, $orderBy: surtidoOrderByInput) {
       surtidos(first: ${LIMITE}, filter: $filter, orderBy: $orderBy) {
@@ -211,24 +226,29 @@ export async function getPedidosSurtido(estado?: EstadoSurtido): Promise<PedidoS
       }
     }
   `
-  const datos = await fetchGraphQL<{ surtidos: Conexion<PedidoSurtido> }>(QUERY, {
-    filter: filtroEstado(estado),
-    orderBy: ORDEN_RECIENTE,
-  })
+  const datos = await fetchGraphQL<{ surtidos: Conexion<PedidoSurtido> }>(
+    QUERY,
+    { filter: filtroEstado(estado), orderBy: ORDEN_RECIENTE },
+    token,
+  )
   return datos.surtidos.items
 }
 
-export async function crearPedidoSurtido(item: CrearSurtidoInput): Promise<PedidoSurtido> {
+export async function crearPedidoSurtido(
+  token: Token,
+  item: CrearSurtidoInput,
+): Promise<PedidoSurtido> {
   const MUTATION = /* GraphQL */ `
     mutation CrearSurtido($item: CreatesurtidoInput!) {
       createsurtido(item: $item) { ${CAMPOS_SURTIDO} }
     }
   `
-  const datos = await fetchGraphQL<{ createsurtido: PedidoSurtido }>(MUTATION, { item })
+  const datos = await fetchGraphQL<{ createsurtido: PedidoSurtido }>(MUTATION, { item }, token)
   return datos.createsurtido
 }
 
 export async function actualizarEstadoSurtido(
+  token: Token,
   id: string,
   estado: EstadoSurtido,
   operador?: string | null,
@@ -240,21 +260,21 @@ export async function actualizarEstadoSurtido(
       }
     }
   `
-  const datos = await fetchGraphQL<{ executeActualizarEstadoSurtido: PedidoSurtido[] }>(MUTATION, {
-    id,
-    estado,
-    operador: operador ?? null,
-  })
+  const datos = await fetchGraphQL<{ executeActualizarEstadoSurtido: PedidoSurtido[] }>(
+    MUTATION,
+    { id, estado, operador: operador ?? null },
+    token,
+  )
   return datos.executeActualizarEstadoSurtido[0] ?? null
 }
 
-export async function eliminarPedidoSurtido(id: string): Promise<void> {
+export async function eliminarPedidoSurtido(token: Token, id: string): Promise<void> {
   const MUTATION = /* GraphQL */ `
     mutation EliminarSurtido($id: String!) {
       deletesurtido(id: $id) { id }
     }
   `
-  await fetchGraphQL<{ deletesurtido: { id: string } | null }>(MUTATION, { id })
+  await fetchGraphQL<{ deletesurtido: { id: string } | null }>(MUTATION, { id }, token)
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +290,10 @@ export interface CrearEtiquetadoInput {
   motivo_rechazo?: string | null
 }
 
-export async function getLotesEtiquetado(estado?: EstadoEtiquetado): Promise<LoteEtiquetado[]> {
+export async function getLotesEtiquetado(
+  token: Token,
+  estado?: EstadoEtiquetado,
+): Promise<LoteEtiquetado[]> {
   const QUERY = /* GraphQL */ `
     query GetEtiquetados($filter: etiquetadoFilterInput, $orderBy: etiquetadoOrderByInput) {
       etiquetados(first: ${LIMITE}, filter: $filter, orderBy: $orderBy) {
@@ -280,24 +303,29 @@ export async function getLotesEtiquetado(estado?: EstadoEtiquetado): Promise<Lot
       }
     }
   `
-  const datos = await fetchGraphQL<{ etiquetados: Conexion<LoteEtiquetado> }>(QUERY, {
-    filter: filtroEstado(estado),
-    orderBy: ORDEN_RECIENTE,
-  })
+  const datos = await fetchGraphQL<{ etiquetados: Conexion<LoteEtiquetado> }>(
+    QUERY,
+    { filter: filtroEstado(estado), orderBy: ORDEN_RECIENTE },
+    token,
+  )
   return datos.etiquetados.items
 }
 
-export async function crearLoteEtiquetado(item: CrearEtiquetadoInput): Promise<LoteEtiquetado> {
+export async function crearLoteEtiquetado(
+  token: Token,
+  item: CrearEtiquetadoInput,
+): Promise<LoteEtiquetado> {
   const MUTATION = /* GraphQL */ `
     mutation CrearEtiquetado($item: CreateetiquetadoInput!) {
       createetiquetado(item: $item) { ${CAMPOS_ETIQUETADO} }
     }
   `
-  const datos = await fetchGraphQL<{ createetiquetado: LoteEtiquetado }>(MUTATION, { item })
+  const datos = await fetchGraphQL<{ createetiquetado: LoteEtiquetado }>(MUTATION, { item }, token)
   return datos.createetiquetado
 }
 
 export async function actualizarEstadoEtiquetado(
+  token: Token,
   id: string,
   estado: EstadoEtiquetado,
   motivoRechazo?: string | null,
@@ -312,17 +340,18 @@ export async function actualizarEstadoEtiquetado(
   const datos = await fetchGraphQL<{ executeActualizarEstadoEtiquetado: LoteEtiquetado[] }>(
     MUTATION,
     { id, estado, motivoRechazo: motivoRechazo ?? null },
+    token,
   )
   return datos.executeActualizarEstadoEtiquetado[0] ?? null
 }
 
-export async function eliminarLoteEtiquetado(id: string): Promise<void> {
+export async function eliminarLoteEtiquetado(token: Token, id: string): Promise<void> {
   const MUTATION = /* GraphQL */ `
     mutation EliminarEtiquetado($id: String!) {
       deleteetiquetado(id: $id) { id }
     }
   `
-  await fetchGraphQL<{ deleteetiquetado: { id: string } | null }>(MUTATION, { id })
+  await fetchGraphQL<{ deleteetiquetado: { id: string } | null }>(MUTATION, { id }, token)
 }
 
 // ---------------------------------------------------------------------------
@@ -346,7 +375,7 @@ export interface RegistrarProductividadInput {
   meta: number
 }
 
-export async function getRegistrosProductividad(): Promise<RegistroProductividad[]> {
+export async function getRegistrosProductividad(token: Token): Promise<RegistroProductividad[]> {
   const QUERY = /* GraphQL */ `
     query GetProductividad {
       productividads(first: ${LIMITE}, orderBy: { created_at: DESC }) {
@@ -355,7 +384,11 @@ export async function getRegistrosProductividad(): Promise<RegistroProductividad
       }
     }
   `
-  const datos = await fetchGraphQL<{ productividads: Conexion<RegistroProductividadApi> }>(QUERY)
+  const datos = await fetchGraphQL<{ productividads: Conexion<RegistroProductividadApi> }>(
+    QUERY,
+    undefined,
+    token,
+  )
   return datos.productividads.items.map(aRegistroProductividad)
 }
 
@@ -364,6 +397,7 @@ export async function getRegistrosProductividad(): Promise<RegistroProductividad
  * horas y meta, y es idempotente sobre el id que genera el frontend.
  */
 export async function registrarProductividad(
+  token: Token,
   input: RegistrarProductividadInput,
 ): Promise<RegistroProductividad | null> {
   const MUTATION = /* GraphQL */ `
@@ -379,18 +413,18 @@ export async function registrarProductividad(
   `
   const datos = await fetchGraphQL<{
     executeRegistrarProductividad: RegistroProductividadApi[]
-  }>(MUTATION, { ...input })
+  }>(MUTATION, { ...input }, token)
   const registro = datos.executeRegistrarProductividad[0]
   return registro ? aRegistroProductividad(registro) : null
 }
 
-export async function eliminarRegistroProductividad(id: string): Promise<void> {
+export async function eliminarRegistroProductividad(token: Token, id: string): Promise<void> {
   const MUTATION = /* GraphQL */ `
     mutation EliminarProductividad($id: String!) {
       deleteproductividad(id: $id) { id }
     }
   `
-  await fetchGraphQL<{ deleteproductividad: { id: string } | null }>(MUTATION, { id })
+  await fetchGraphQL<{ deleteproductividad: { id: string } | null }>(MUTATION, { id }, token)
 }
 
 // ---------------------------------------------------------------------------
@@ -400,37 +434,44 @@ export async function eliminarRegistroProductividad(id: string): Promise<void> {
 // `incidencias` todavía no está publicada en la API for GraphQL, así que estas
 // operaciones siguen siendo stubs: fallan y lib/data.ts cae a los datos seed.
 
-export async function getIncidencias(): Promise<Incidencia[]> {
+export async function getIncidencias(token: Token): Promise<Incidencia[]> {
   const QUERY = /* GraphQL */ `
     # TODO: completar query cuando la tabla incidencias se exponga en la API
   `
-  return fetchGraphQL<{ incidencias: Conexion<Incidencia> }>(QUERY).then((d) => d.incidencias.items)
+  return fetchGraphQL<{ incidencias: Conexion<Incidencia> }>(QUERY, undefined, token).then(
+    (d) => d.incidencias.items,
+  )
 }
 
-export async function crearIncidencia(input: {
-  tipo: TipoIncidencia
-  severidad: Severidad
-  modulo: Incidencia['modulo']
-  descripcion: string
-  responsable: string
-}): Promise<Incidencia> {
+export async function crearIncidencia(
+  token: Token,
+  input: {
+    tipo: TipoIncidencia
+    severidad: Severidad
+    modulo: Incidencia['modulo']
+    descripcion: string
+    responsable: string
+  },
+): Promise<Incidencia> {
   const MUTATION = /* GraphQL */ `
     # TODO: completar mutation (executeCrearIncidencia)
   `
-  return fetchGraphQL<{ executeCrearIncidencia: Incidencia[] }>(MUTATION, { ...input }).then(
+  return fetchGraphQL<{ executeCrearIncidencia: Incidencia[] }>(MUTATION, { ...input }, token).then(
     (d) => d.executeCrearIncidencia[0],
   )
 }
 
 export async function actualizarEstadoIncidencia(
+  token: Token,
   id: string,
   estado: EstadoIncidencia,
 ): Promise<Incidencia> {
   const MUTATION = /* GraphQL */ `
     # TODO: completar mutation (executeActualizarEstadoIncidencia)
   `
-  return fetchGraphQL<{ executeActualizarEstadoIncidencia: Incidencia[] }>(MUTATION, {
-    id,
-    estado,
-  }).then((d) => d.executeActualizarEstadoIncidencia[0])
+  return fetchGraphQL<{ executeActualizarEstadoIncidencia: Incidencia[] }>(
+    MUTATION,
+    { id, estado },
+    token,
+  ).then((d) => d.executeActualizarEstadoIncidencia[0])
 }

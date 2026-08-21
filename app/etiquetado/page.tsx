@@ -1,11 +1,14 @@
+'use client'
+
 import { EtiquetadoControl } from '@/components/modulos/configs'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { BannerOffline } from '@/components/shared/banner-offline'
 import { PageHeader } from '@/components/shared/page-header'
-import { cargarLotesEtiquetado } from '@/lib/data'
 import { metricasEtiquetado } from '@/lib/metrics'
 
-export default async function EtiquetadoPage() {
-  const { datos: lotes, offline } = await cargarLotesEtiquetado()
+export default function EtiquetadoPage() {
+  const { datos, offline } = useDatosCedis()
+  const lotes = datos.lotesEtiquetado
   const { pctEtiquetados, rechazados } = metricasEtiquetado(lotes)
 
   return (
@@ -32,7 +35,7 @@ export default async function EtiquetadoPage() {
         }
       />
 
-      {offline && <BannerOffline />}
+      {offline.lotesEtiquetado && <BannerOffline />}
 
       <EtiquetadoControl registros={lotes} />
     </div>

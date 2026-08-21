@@ -1,11 +1,14 @@
+'use client'
+
 import { RecepcionesControl } from '@/components/modulos/configs'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { BannerOffline } from '@/components/shared/banner-offline'
 import { PageHeader } from '@/components/shared/page-header'
-import { cargarRecepciones } from '@/lib/data'
 import { metricasRecepciones } from '@/lib/metrics'
 
-export default async function RecepcionesPage() {
-  const { datos: recepciones, offline } = await cargarRecepciones()
+export default function RecepcionesPage() {
+  const { datos, offline } = useDatosCedis()
+  const recepciones = datos.recepciones
   const { recibidas, conDiscrepancia } = metricasRecepciones(recepciones)
 
   return (
@@ -32,7 +35,7 @@ export default async function RecepcionesPage() {
         }
       />
 
-      {offline && <BannerOffline />}
+      {offline.recepciones && <BannerOffline />}
 
       <RecepcionesControl registros={recepciones} />
     </div>

@@ -1,7 +1,7 @@
 'use client'
 
 // Configuración de los cuatro módulos operativos: columnas, campos de alta y
-// las server actions que ejecuta cada operación. Es lo único que distingue a un
+// las operaciones de escritura que ejecuta cada una. Es lo único que distingue a un
 // módulo de otro — la mecánica está en <ModuleControlView>.
 
 import { EstadoBadge } from '@/components/shared/estado-badge'
@@ -115,8 +115,8 @@ export const CONFIG_EMBARQUES: ConfigModulo<Embarque> = {
       valorInicial: 'programado',
     },
   ],
-  crear: (v) =>
-    accionCrearEmbarque({
+  crear: (token, v) =>
+    accionCrearEmbarque(token, {
       folio: v.folio,
       destino: v.destino,
       transportista: v.transportista,
@@ -124,9 +124,9 @@ export const CONFIG_EMBARQUES: ConfigModulo<Embarque> = {
       hora_salida: aTexto(v.hora_salida),
       estado: (v.estado || 'programado') as EstadoEmbarque,
     }),
-  cambiarEstado: (registro, estado) =>
-    accionActualizarEstadoEmbarque(registro.id, estado as EstadoEmbarque),
-  eliminar: (id) => accionEliminarEmbarque(id),
+  cambiarEstado: (token, registro, estado) =>
+    accionActualizarEstadoEmbarque(token, registro.id, estado as EstadoEmbarque),
+  eliminar: (token, id) => accionEliminarEmbarque(token, id),
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +182,8 @@ export const CONFIG_RECEPCIONES: ConfigModulo<Recepcion> = {
       valorInicial: 'programada',
     },
   ],
-  crear: (v) =>
-    accionCrearRecepcion({
+  crear: (token, v) =>
+    accionCrearRecepcion(token, {
       folio: v.folio,
       proveedor: v.proveedor,
       anden: aTexto(v.anden),
@@ -192,9 +192,9 @@ export const CONFIG_RECEPCIONES: ConfigModulo<Recepcion> = {
       estado: (v.estado || 'programada') as EstadoRecepcion,
     }),
   // El SP conserva el andén actual cuando llega null, así que se reenvía.
-  cambiarEstado: (registro, estado) =>
-    accionActualizarEstadoRecepcion(registro.id, estado as EstadoRecepcion, registro.anden),
-  eliminar: (id) => accionEliminarRecepcion(id),
+  cambiarEstado: (token, registro, estado) =>
+    accionActualizarEstadoRecepcion(token, registro.id, estado as EstadoRecepcion, registro.anden),
+  eliminar: (token, id) => accionEliminarRecepcion(token, id),
 }
 
 // ---------------------------------------------------------------------------
@@ -256,8 +256,8 @@ export const CONFIG_SURTIDO: ConfigModulo<PedidoSurtido> = {
       valorInicial: 'pendiente',
     },
   ],
-  crear: (v) =>
-    accionCrearPedidoSurtido({
+  crear: (token, v) =>
+    accionCrearPedidoSurtido(token, {
       pedido: v.pedido,
       cliente: v.cliente,
       lineas: aNumero(v.lineas),
@@ -266,9 +266,9 @@ export const CONFIG_SURTIDO: ConfigModulo<PedidoSurtido> = {
       estado: (v.estado || 'pendiente') as EstadoSurtido,
     }),
   // Sin operador el SP rechaza el paso a 'surtiendo'; se reenvía el asignado.
-  cambiarEstado: (registro, estado) =>
-    accionActualizarEstadoSurtido(registro.id, estado as EstadoSurtido, registro.operador),
-  eliminar: (id) => accionEliminarPedidoSurtido(id),
+  cambiarEstado: (token, registro, estado) =>
+    accionActualizarEstadoSurtido(token, registro.id, estado as EstadoSurtido, registro.operador),
+  eliminar: (token, id) => accionEliminarPedidoSurtido(token, id),
 }
 
 // ---------------------------------------------------------------------------
@@ -328,17 +328,17 @@ export const CONFIG_ETIQUETADO: ConfigModulo<LoteEtiquetado> = {
       valorInicial: 'pendiente',
     },
   ],
-  crear: (v) =>
-    accionCrearLoteEtiquetado({
+  crear: (token, v) =>
+    accionCrearLoteEtiquetado(token, {
       lote: v.lote,
       producto: v.producto,
       unidades: aNumero(v.unidades),
       operador: aTexto(v.operador),
       estado: (v.estado || 'pendiente') as EstadoEtiquetado,
     }),
-  cambiarEstado: (registro, estado, motivoRechazo) =>
-    accionActualizarEstadoEtiquetado(registro.id, estado as EstadoEtiquetado, motivoRechazo),
-  eliminar: (id) => accionEliminarLoteEtiquetado(id),
+  cambiarEstado: (token, registro, estado, motivoRechazo) =>
+    accionActualizarEstadoEtiquetado(token, registro.id, estado as EstadoEtiquetado, motivoRechazo),
+  eliminar: (token, id) => accionEliminarLoteEtiquetado(token, id),
 }
 
 // ---------------------------------------------------------------------------

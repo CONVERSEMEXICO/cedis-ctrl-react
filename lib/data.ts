@@ -1,12 +1,12 @@
 // Capa de acceso a datos: intenta leer de la GraphQL API de Microsoft Fabric
-// y usa los datos seed como respaldo cuando la API no está conectada o falla.
+// con el token de Entra ID del usuario y usa los datos seed como respaldo
+// cuando no hay sesión, la API no está conectada o falla.
 //
-// Dos formas de consumir cada conjunto:
-//   - `cargarX()`   → { datos, offline }; lo usan las vistas que muestran el
-//                     banner "Modo offline — datos de demostración".
-//   - `obtenerX()`  → solo los datos; para el dashboard y el shell, donde el
-//                     origen no cambia lo que se pinta.
+// El token lo obtiene el navegador con MSAL, así que cada carga lo recibe como
+// argumento; quien lo pide es <ProveedorDatosCedis>
+// (components/providers/cedis-data-provider.tsx), el único que llama aquí.
 
+import { esSesionExpirada } from '@/lib/graphql'
 import {
   getEmbarques,
   getIncidencias,
@@ -32,80 +32,126 @@ import type {
   RegistroProductividad,
 } from '@/types/cedis'
 
+type Token = string | null
+
 export interface ResultadoDatos<T> {
   datos: T
   /** true cuando la API falló y lo que se ve son datos de demostración. */
   offline: boolean
+  /** true cuando el fallo fue un 401: hay que volver a iniciar sesión. */
+  sesionExpirada: boolean
 }
 
 async function conRespaldo<T>(fn: () => Promise<T>, respaldo: T): Promise<ResultadoDatos<T>> {
   try {
-    return { datos: await fn(), offline: false }
-  } catch {
-    return { datos: respaldo, offline: true }
+    return { datos: await fn(), offline: false, sesionExpirada: false }
+  } catch (error) {
+    return { datos: respaldo, offline: true, sesionExpirada: esSesionExpirada(error) }
   }
 }
 
-export async function cargarEmbarques(): Promise<ResultadoDatos<Embarque[]>> {
-  return conRespaldo(() => getEmbarques(), embarquesSeed)
+export async function cargarEmbarques(token: Token): Promise<ResultadoDatos<Embarque[]>> {
+  return conRespaldo(() => getEmbarques(token), embarquesSeed)
 }
 
-export async function cargarRecepciones(): Promise<ResultadoDatos<Recepcion[]>> {
-  return conRespaldo(() => getRecepciones(), recepcionesSeed)
+export async function cargarRecepciones(token: Token): Promise<ResultadoDatos<Recepcion[]>> {
+  return conRespaldo(() => getRecepciones(token), recepcionesSeed)
 }
 
-export async function cargarPedidosSurtido(): Promise<ResultadoDatos<PedidoSurtido[]>> {
-  return conRespaldo(() => getPedidosSurtido(), pedidosSurtidoSeed)
+export async function cargarPedidosSurtido(token: Token): Promise<ResultadoDatos<PedidoSurtido[]>> {
+  return conRespaldo(() => getPedidosSurtido(token), pedidosSurtidoSeed)
 }
 
-export async function cargarLotesEtiquetado(): Promise<ResultadoDatos<LoteEtiquetado[]>> {
-  return conRespaldo(() => getLotesEtiquetado(), lotesEtiquetadoSeed)
+export async function cargarLotesEtiquetado(
+  token: Token,
+): Promise<ResultadoDatos<LoteEtiquetado[]>> {
+  return conRespaldo(() => getLotesEtiquetado(token), lotesEtiquetadoSeed)
 }
 
-export async function cargarIncidencias(): Promise<ResultadoDatos<Incidencia[]>> {
-  return conRespaldo(getIncidencias, incidenciasSeed)
+export async function cargarIncidencias(token: Token): Promise<ResultadoDatos<Incidencia[]>> {
+  return conRespaldo(() => getIncidencias(token), incidenciasSeed)
 }
 
-export async function cargarRegistrosProductividad(): Promise<
-  ResultadoDatos<RegistroProductividad[]>
-> {
-  return conRespaldo(getRegistrosProductividad, registrosProductividadSeed)
+export async function cargarRegistrosProductividad(
+  token: Token,
+): Promise<ResultadoDatos<RegistroProductividad[]>> {
+  return conRespaldo(() => getRegistrosProductividad(token), registrosProductividadSeed)
 }
 
-export async function obtenerEmbarques(): Promise<Embarque[]> {
-  return (await cargarEmbarques()).datos
+/** Los seis conjuntos que consume el panel. */
+export interface DatosCedis {
+  embarques: Embarque[]
+  recepciones: Recepcion[]
+  pedidosSurtido: PedidoSurtido[]
+  lotesEtiquetado: LoteEtiquetado[]
+  incidencias: Incidencia[]
+  productividad: RegistroProductividad[]
 }
 
-export async function obtenerRecepciones(): Promise<Recepcion[]> {
-  return (await cargarRecepciones()).datos
+/** Qué conjuntos vinieron del respaldo seed; cada página pinta su banner. */
+export type OfflinePorConjunto = Record<keyof DatosCedis, boolean>
+
+export interface ResultadoDatosCedis {
+  datos: DatosCedis
+  offline: OfflinePorConjunto
+  /** true si alguna de las seis cargas falló por sesión vencida. */
+  sesionExpirada: boolean
 }
 
-export async function obtenerPedidosSurtido(): Promise<PedidoSurtido[]> {
-  return (await cargarPedidosSurtido()).datos
+/** Estado inicial: sin datos todavía, todo marcado como no cargado. */
+export const DATOS_VACIOS: DatosCedis = {
+  embarques: [],
+  recepciones: [],
+  pedidosSurtido: [],
+  lotesEtiquetado: [],
+  incidencias: [],
+  productividad: [],
 }
 
-export async function obtenerLotesEtiquetado(): Promise<LoteEtiquetado[]> {
-  return (await cargarLotesEtiquetado()).datos
+export const OFFLINE_INICIAL: OfflinePorConjunto = {
+  embarques: false,
+  recepciones: false,
+  pedidosSurtido: false,
+  lotesEtiquetado: false,
+  incidencias: false,
+  productividad: false,
 }
 
-export async function obtenerIncidencias(): Promise<Incidencia[]> {
-  return (await cargarIncidencias()).datos
-}
-
-export async function obtenerRegistrosProductividad(): Promise<RegistroProductividad[]> {
-  return (await cargarRegistrosProductividad()).datos
-}
-
-export async function obtenerDatosCedis() {
+export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedis> {
   const [embarques, recepciones, pedidosSurtido, lotesEtiquetado, incidencias, productividad] =
     await Promise.all([
-      obtenerEmbarques(),
-      obtenerRecepciones(),
-      obtenerPedidosSurtido(),
-      obtenerLotesEtiquetado(),
-      obtenerIncidencias(),
-      obtenerRegistrosProductividad(),
+      cargarEmbarques(token),
+      cargarRecepciones(token),
+      cargarPedidosSurtido(token),
+      cargarLotesEtiquetado(token),
+      cargarIncidencias(token),
+      cargarRegistrosProductividad(token),
     ])
 
-  return { embarques, recepciones, pedidosSurtido, lotesEtiquetado, incidencias, productividad }
+  return {
+    datos: {
+      embarques: embarques.datos,
+      recepciones: recepciones.datos,
+      pedidosSurtido: pedidosSurtido.datos,
+      lotesEtiquetado: lotesEtiquetado.datos,
+      incidencias: incidencias.datos,
+      productividad: productividad.datos,
+    },
+    offline: {
+      embarques: embarques.offline,
+      recepciones: recepciones.offline,
+      pedidosSurtido: pedidosSurtido.offline,
+      lotesEtiquetado: lotesEtiquetado.offline,
+      incidencias: incidencias.offline,
+      productividad: productividad.offline,
+    },
+    sesionExpirada: [
+      embarques,
+      recepciones,
+      pedidosSurtido,
+      lotesEtiquetado,
+      incidencias,
+      productividad,
+    ].some((resultado) => resultado.sesionExpirada),
+  }
 }

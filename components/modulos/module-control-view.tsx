@@ -4,15 +4,13 @@
 //
 // Los cuatro se comportan igual —filtrar por estatus, cambiar el estatus de un
 // renglón, dar de alta, eliminar— y solo cambian sus columnas, sus estados y
-// las server actions que invocan. Todo eso llega en `config`
+// las operaciones de escritura que invocan. Todo eso llega en `config`
 // (components/modulos/configs.tsx); aquí no hay nada específico de un módulo.
 
 import { X } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
-import { toast } from 'sonner'
+import { useState } from 'react'
 import { CrearRegistroDialog } from '@/components/modulos/crear-registro-dialog'
-import { ERROR_GUARDAR, type ConfigModulo, type RegistroBase } from '@/components/modulos/tipos'
+import type { ConfigModulo, RegistroBase } from '@/components/modulos/tipos'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -41,8 +39,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useOperacionCedis, type OperacionCedis } from '@/hooks/use-operacion-cedis'
 import { cn } from '@/lib/utils'
-import type { ResultadoAccion } from '@/types/cedis'
 
 const TODOS = 'todos'
 
@@ -53,9 +51,8 @@ export function ModuleControlView<T extends RegistroBase>({
   config: ConfigModulo<T>
   registros: T[]
 }) {
-  const router = useRouter()
+  const { ejecutar: ejecutarOperacion } = useOperacionCedis()
   const [filtro, setFiltro] = useState<string>(TODOS)
-  const [, iniciarTransicion] = useTransition()
   const [idEnCurso, setIdEnCurso] = useState<string | null>(null)
   const [aEliminar, setAEliminar] = useState<T | null>(null)
   const [pideMotivo, setPideMotivo] = useState<T | null>(null)
@@ -63,18 +60,10 @@ export function ModuleControlView<T extends RegistroBase>({
 
   const visibles = filtro === TODOS ? registros : registros.filter((r) => r.estado === filtro)
 
-  function ejecutar(id: string, accion: () => Promise<ResultadoAccion>, exito: string) {
+  async function ejecutar(id: string, operacion: OperacionCedis, exito: string) {
     setIdEnCurso(id)
-    iniciarTransicion(async () => {
-      const resultado = await accion()
-      setIdEnCurso(null)
-      if (!resultado.ok) {
-        toast.error(ERROR_GUARDAR, { description: resultado.error })
-        return
-      }
-      toast.success(exito)
-      router.refresh()
-    })
+    await ejecutarOperacion(operacion, exito)
+    setIdEnCurso(null)
   }
 
   function alCambiarEstado(registro: T, estado: string) {
@@ -84,7 +73,11 @@ export function ModuleControlView<T extends RegistroBase>({
       setPideMotivo(registro)
       return
     }
-    ejecutar(registro.id, () => config.cambiarEstado(registro, estado), 'Estatus actualizado')
+    void ejecutar(
+      registro.id,
+      (token) => config.cambiarEstado(token, registro, estado),
+      'Estatus actualizado',
+    )
   }
 
   function confirmarMotivo() {
@@ -92,9 +85,9 @@ export function ModuleControlView<T extends RegistroBase>({
     const estado = config.estadoQuePideMotivo
     if (!registro || !estado || motivo.trim() === '') return
     setPideMotivo(null)
-    ejecutar(
+    void ejecutar(
       registro.id,
-      () => config.cambiarEstado(registro, estado, motivo.trim()),
+      (token) => config.cambiarEstado(token, registro, estado, motivo.trim()),
       'Estatus actualizado',
     )
   }
@@ -103,7 +96,7 @@ export function ModuleControlView<T extends RegistroBase>({
     const registro = aEliminar
     if (!registro) return
     setAEliminar(null)
-    ejecutar(registro.id, () => config.eliminar(registro.id), 'Registro eliminado')
+    void ejecutar(registro.id, (token) => config.eliminar(token, registro.id), 'Registro eliminado')
   }
 
   return (
