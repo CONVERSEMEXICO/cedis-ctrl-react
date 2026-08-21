@@ -27,8 +27,9 @@ export const msalConfig: Configuration = {
   cache: {
     // sessionStorage: el token muere al cerrar la pestaña, que es lo que se
     // quiere en las terminales compartidas del piso del CEDIS.
+    // (msal-browser 5 ya no tiene `storeAuthStateInCookie`: se quitó del tipo
+    // CacheOptions, el estado de auth siempre va en el storage configurado.)
     cacheLocation: 'sessionStorage',
-    storeAuthStateInCookie: false,
   },
 }
 
