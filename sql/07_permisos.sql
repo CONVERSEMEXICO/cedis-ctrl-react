@@ -24,6 +24,10 @@ DECLARE @sql NVARCHAR(MAX) =
     N'GRANT EXECUTE ON OBJECT::dbo.ActualizarEstadoRecepcion TO '  + QUOTENAME(@principal) + N';' + CHAR(10) +
     N'GRANT EXECUTE ON OBJECT::dbo.ActualizarEstadoSurtido TO '    + QUOTENAME(@principal) + N';' + CHAR(10) +
     N'GRANT EXECUTE ON OBJECT::dbo.ActualizarEstadoEtiquetado TO ' + QUOTENAME(@principal) + N';' + CHAR(10) +
+    N'GRANT EXECUTE ON OBJECT::dbo.CrearEmbarque TO '              + QUOTENAME(@principal) + N';' + CHAR(10) +
+    N'GRANT EXECUTE ON OBJECT::dbo.CrearRecepcion TO '             + QUOTENAME(@principal) + N';' + CHAR(10) +
+    N'GRANT EXECUTE ON OBJECT::dbo.CrearPedidoSurtido TO '         + QUOTENAME(@principal) + N';' + CHAR(10) +
+    N'GRANT EXECUTE ON OBJECT::dbo.CrearLoteEtiquetado TO '        + QUOTENAME(@principal) + N';' + CHAR(10) +
     N'GRANT EXECUTE ON OBJECT::dbo.CrearIncidencia TO '            + QUOTENAME(@principal) + N';' + CHAR(10) +
     N'GRANT EXECUTE ON OBJECT::dbo.ActualizarEstadoIncidencia TO ' + QUOTENAME(@principal) + N';' + CHAR(10) +
     N'GRANT EXECUTE ON OBJECT::dbo.RegistrarProductividad TO '     + QUOTENAME(@principal) + N';' + CHAR(10) +

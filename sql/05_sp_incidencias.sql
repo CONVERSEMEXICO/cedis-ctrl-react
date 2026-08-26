@@ -19,7 +19,6 @@ CREATE OR ALTER PROCEDURE dbo.CrearIncidencia
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET XACT_ABORT ON;
 
     IF @tipo IS NULL OR @tipo NOT IN ('dano_mercancia','faltante','retraso_transporte','error_surtido',
                      'falla_equipo','seguridad','discrepancia_inventario','etiquetado_rechazado')
@@ -78,7 +77,6 @@ CREATE OR ALTER PROCEDURE dbo.ActualizarEstadoIncidencia
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET XACT_ABORT ON;
 
     IF @id IS NULL OR LTRIM(RTRIM(@id)) = ''
     BEGIN

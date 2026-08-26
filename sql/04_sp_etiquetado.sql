@@ -13,7 +13,6 @@ CREATE OR ALTER PROCEDURE dbo.ActualizarEstadoEtiquetado
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET XACT_ABORT ON;
 
     IF @id IS NULL OR LTRIM(RTRIM(@id)) = ''
     BEGIN

@@ -12,9 +12,11 @@
 //   - Los cambios de estado NO usan las mutations update genéricas: van por
 //     stored procedure (`executeActualizarEstado*`), que valida el dominio del
 //     estado y sella `updated_at`. Ver sql/01..06.
-//   - En las altas, `id`, `created_at` y `updated_at` los pone el server.
+//   - Las altas tampoco usan las mutations `create*` genéricas: van por SP
+//     (`executeCrear*`, ver sql/08_sp_altas.sql) para que `id`, `created_at` y
+//     `updated_at` los ponga el server y no se puedan escribir desde la API.
 
-import { fetchGraphQL } from '@/lib/graphql'
+import { fetchGraphQL, GraphQLRequestError } from '@/lib/graphql'
 import type {
   Embarque,
   EstadoEmbarque,
@@ -53,6 +55,21 @@ const CAMPOS_SURTIDO = 'id pedido cliente lineas operador prioridad estado creat
 const CAMPOS_ETIQUETADO =
   'id lote producto unidades operador estado motivo_rechazo created_at updated_at'
 const CAMPOS_PRODUCTIVIDAD = 'id operador area turno unidades horas meta created_at'
+
+/**
+ * Primera (y única) fila que devuelve un SP de alta.
+ *
+ * Los `executeCrear*` devuelven el result set como arreglo; el SP siempre cierra
+ * con un `SELECT` de la fila creada, así que un arreglo vacío significa que algo
+ * salió mal del lado de Fabric y no hay registro que devolverle a la UI.
+ */
+function primeraFila<T>(filas: T[] | null | undefined, que: string): T {
+  const fila = filas?.[0]
+  if (!fila) {
+    throw new GraphQLRequestError(`El alta de ${que} no devolvió el registro creado.`)
+  }
+  return fila
+}
 
 /** `filter: null` trae todos los registros; con estado filtra en el server. */
 function filtroEstado(estado?: string) {
@@ -94,12 +111,37 @@ export async function getEmbarques(token: Token, estado?: EstadoEmbarque): Promi
 
 export async function crearEmbarque(token: Token, item: CrearEmbarqueInput): Promise<Embarque> {
   const MUTATION = /* GraphQL */ `
-    mutation CrearEmbarque($item: CreateembarquesInput!) {
-      createembarques(item: $item) { ${CAMPOS_EMBARQUE} }
+    mutation CrearEmbarque(
+      $folio: String
+      $destino: String
+      $transportista: String
+      $unidades: Int
+      $horaSalida: String
+      $estado: String
+    ) {
+      executeCrearEmbarque(
+        folio: $folio
+        destino: $destino
+        transportista: $transportista
+        unidades: $unidades
+        horaSalida: $horaSalida
+        estado: $estado
+      ) { ${CAMPOS_EMBARQUE} }
     }
   `
-  const datos = await fetchGraphQL<{ createembarques: Embarque }>(MUTATION, { item }, token)
-  return datos.createembarques
+  const datos = await fetchGraphQL<{ executeCrearEmbarque: Embarque[] }>(
+    MUTATION,
+    {
+      folio: item.folio,
+      destino: item.destino,
+      transportista: item.transportista,
+      unidades: item.unidades ?? null,
+      horaSalida: item.hora_salida ?? null,
+      estado: item.estado ?? 'programado',
+    },
+    token,
+  )
+  return primeraFila(datos.executeCrearEmbarque, 'embarque')
 }
 
 export async function actualizarEstadoEmbarque(
@@ -162,12 +204,37 @@ export async function getRecepciones(token: Token, estado?: EstadoRecepcion): Pr
 
 export async function crearRecepcion(token: Token, item: CrearRecepcionInput): Promise<Recepcion> {
   const MUTATION = /* GraphQL */ `
-    mutation CrearRecepcion($item: CreaterecepcionesInput!) {
-      createrecepciones(item: $item) { ${CAMPOS_RECEPCION} }
+    mutation CrearRecepcion(
+      $folio: String
+      $proveedor: String
+      $anden: String
+      $unidades: Int
+      $tipo: String
+      $estado: String
+    ) {
+      executeCrearRecepcion(
+        folio: $folio
+        proveedor: $proveedor
+        anden: $anden
+        unidades: $unidades
+        tipo: $tipo
+        estado: $estado
+      ) { ${CAMPOS_RECEPCION} }
     }
   `
-  const datos = await fetchGraphQL<{ createrecepciones: Recepcion }>(MUTATION, { item }, token)
-  return datos.createrecepciones
+  const datos = await fetchGraphQL<{ executeCrearRecepcion: Recepcion[] }>(
+    MUTATION,
+    {
+      folio: item.folio,
+      proveedor: item.proveedor,
+      anden: item.anden ?? null,
+      unidades: item.unidades ?? null,
+      tipo: item.tipo ?? null,
+      estado: item.estado ?? 'programada',
+    },
+    token,
+  )
+  return primeraFila(datos.executeCrearRecepcion, 'recepción')
 }
 
 export async function actualizarEstadoRecepcion(
@@ -239,12 +306,37 @@ export async function crearPedidoSurtido(
   item: CrearSurtidoInput,
 ): Promise<PedidoSurtido> {
   const MUTATION = /* GraphQL */ `
-    mutation CrearSurtido($item: CreatesurtidoInput!) {
-      createsurtido(item: $item) { ${CAMPOS_SURTIDO} }
+    mutation CrearPedidoSurtido(
+      $pedido: String
+      $cliente: String
+      $lineas: Int
+      $operador: String
+      $prioridad: String
+      $estado: String
+    ) {
+      executeCrearPedidoSurtido(
+        pedido: $pedido
+        cliente: $cliente
+        lineas: $lineas
+        operador: $operador
+        prioridad: $prioridad
+        estado: $estado
+      ) { ${CAMPOS_SURTIDO} }
     }
   `
-  const datos = await fetchGraphQL<{ createsurtido: PedidoSurtido }>(MUTATION, { item }, token)
-  return datos.createsurtido
+  const datos = await fetchGraphQL<{ executeCrearPedidoSurtido: PedidoSurtido[] }>(
+    MUTATION,
+    {
+      pedido: item.pedido,
+      cliente: item.cliente,
+      lineas: item.lineas ?? null,
+      operador: item.operador ?? null,
+      prioridad: item.prioridad ?? 'Media',
+      estado: item.estado ?? 'pendiente',
+    },
+    token,
+  )
+  return primeraFila(datos.executeCrearPedidoSurtido, 'pedido de surtido')
 }
 
 export async function actualizarEstadoSurtido(
@@ -316,12 +408,37 @@ export async function crearLoteEtiquetado(
   item: CrearEtiquetadoInput,
 ): Promise<LoteEtiquetado> {
   const MUTATION = /* GraphQL */ `
-    mutation CrearEtiquetado($item: CreateetiquetadoInput!) {
-      createetiquetado(item: $item) { ${CAMPOS_ETIQUETADO} }
+    mutation CrearLoteEtiquetado(
+      $lote: String
+      $producto: String
+      $unidades: Int
+      $operador: String
+      $estado: String
+      $motivoRechazo: String
+    ) {
+      executeCrearLoteEtiquetado(
+        lote: $lote
+        producto: $producto
+        unidades: $unidades
+        operador: $operador
+        estado: $estado
+        motivoRechazo: $motivoRechazo
+      ) { ${CAMPOS_ETIQUETADO} }
     }
   `
-  const datos = await fetchGraphQL<{ createetiquetado: LoteEtiquetado }>(MUTATION, { item }, token)
-  return datos.createetiquetado
+  const datos = await fetchGraphQL<{ executeCrearLoteEtiquetado: LoteEtiquetado[] }>(
+    MUTATION,
+    {
+      lote: item.lote,
+      producto: item.producto,
+      unidades: item.unidades ?? null,
+      operador: item.operador ?? null,
+      estado: item.estado ?? 'pendiente',
+      motivoRechazo: item.motivo_rechazo ?? null,
+    },
+    token,
+  )
+  return primeraFila(datos.executeCrearLoteEtiquetado, 'lote de etiquetado')
 }
 
 export async function actualizarEstadoEtiquetado(

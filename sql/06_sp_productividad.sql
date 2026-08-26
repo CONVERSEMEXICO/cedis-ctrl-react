@@ -15,7 +15,6 @@ CREATE OR ALTER PROCEDURE dbo.RegistrarProductividad
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET XACT_ABORT ON;
 
     IF @operador IS NULL OR LTRIM(RTRIM(@operador)) = ''
     BEGIN

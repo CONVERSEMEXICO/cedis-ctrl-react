@@ -9,6 +9,12 @@ resuelven con stored procedures**: cada SP expuesto aparece como una mutación
 Por eso cada SP de aquí termina con **un solo `SELECT`** de la fila afectada: ese
 `SELECT` es la carga útil que recibe [lib/queries.ts](../lib/queries.ts).
 
+> **Sin `SET XACT_ABORT`.** Los scripts lo traían y Fabric lo rechaza
+> (`... is not supported for SET`), así que se quitó de todos. No lo vuelvas a
+> agregar: cada SP hace una sola escritura, que ya es atómica por sí misma. Si el
+> mismo rechazo aparece con `SET NOCOUNT ON`, se puede quitar igual — solo evita
+> el mensaje de filas afectadas.
+
 ## Orden de ejecución
 
 | # | Script | Qué hace |
@@ -21,6 +27,7 @@ Por eso cada SP de aquí termina con **un solo `SELECT`** de la fila afectada: e
 | 05 | [05_sp_incidencias.sql](05_sp_incidencias.sql) | `dbo.CrearIncidencia`, `dbo.ActualizarEstadoIncidencia` |
 | 06 | [06_sp_productividad.sql](06_sp_productividad.sql) | `dbo.RegistrarProductividad` |
 | 07 | [07_permisos.sql](07_permisos.sql) | `GRANT SELECT` / `GRANT EXECUTE` a la identidad de la API |
+| 08 | [08_sp_altas.sql](08_sp_altas.sql) | `dbo.CrearEmbarque`, `dbo.CrearRecepcion`, `dbo.CrearPedidoSurtido`, `dbo.CrearLoteEtiquetado` — altas con sello de auditoría del server |
 
 Ejecútalos en el editor SQL de la Fabric SQL Database (o con `sqlcmd` / Azure Data
 Studio contra la cadena de conexión del *SQL analytics endpoint* de escritura).
@@ -37,6 +44,10 @@ hasta que se re-exponen.
 | `actualizarEstadoRecepcion(id, estado)` | `dbo.ActualizarEstadoRecepcion` | `executeActualizarEstadoRecepcion` |
 | `actualizarEstadoSurtido(id, estado)` | `dbo.ActualizarEstadoSurtido` | `executeActualizarEstadoSurtido` |
 | `actualizarEstadoEtiquetado(id, estado, motivoRechazo?)` | `dbo.ActualizarEstadoEtiquetado` | `executeActualizarEstadoEtiquetado` |
+| `crearEmbarque(input)` | `dbo.CrearEmbarque` | `executeCrearEmbarque` |
+| `crearRecepcion(input)` | `dbo.CrearRecepcion` | `executeCrearRecepcion` |
+| `crearPedidoSurtido(input)` | `dbo.CrearPedidoSurtido` | `executeCrearPedidoSurtido` |
+| `crearLoteEtiquetado(input)` | `dbo.CrearLoteEtiquetado` | `executeCrearLoteEtiquetado` |
 | `crearIncidencia(input)` | `dbo.CrearIncidencia` | `executeCrearIncidencia` |
 | `actualizarEstadoIncidencia(id, estado)` | `dbo.ActualizarEstadoIncidencia` | `executeActualizarEstadoIncidencia` |
 | `registrarProductividad(input)` | `dbo.RegistrarProductividad` | `executeRegistrarProductividad` |
@@ -106,12 +117,55 @@ Cada SP valida antes de escribir y lanza `THROW` con número propio:
 | 50012 | Lote `rechazado` sin motivo de rechazo. |
 | 50013–50019, 50021–50023 | Validaciones de `CrearIncidencia` y `RegistrarProductividad`. |
 | 50020 | El registro no existe. |
+| 50030 | Falta el folio del alta (`folio` / `pedido` / `lote`). |
+| 50031 | Falta un campo obligatorio del alta (destino, transportista, proveedor, cliente, producto). |
+| 50032 | `unidades` / `lineas` negativas. |
+| 50033 | `hora_salida` fuera del formato `HH:mm`. |
+| 50034 | Prioridad de surtido inválida (`Alta`, `Media`, `Baja`). |
+| 50035 | Ya existe un registro con ese folio. |
 
 Fabric los devuelve en el arreglo `errors` de la respuesta, así que llegan como
 `GraphQLRequestError` a [lib/graphql.ts](../lib/graphql.ts) — y `withFallback()` en
 [lib/data.ts](../lib/data.ts) los convierte silenciosamente en datos seed. **Las
 mutaciones no deberían pasar por `withFallback()`**: un alta que falla no puede
 verse como éxito.
+
+## Auditoría: `created_at` / `updated_at`
+
+Las altas usaban las mutations `create*` que Fabric genera por tabla. Ese input
+incluye las columnas de auditoría, así que el sello lo ponía el navegador —y
+omitirlas tampoco era opción, porque Fabric contestaba:
+
+```
+DateTime cannot coerce the given literal of type `StringValue` to a runtime value.
+  inputPath: ["item","created_at"]   coordinate: CreateembarquesInput.created_at
+```
+
+Reformar el input generado no se puede: el SDL es de solo lectura, el schema
+explorer sólo ofrece *Rename* / *Remove from schema* / *Disable*, y quitar la
+columna la quita también de las lecturas —donde sí se necesita, porque las listas
+ordenan por `created_at DESC`—. Por eso las cuatro altas se movieron a SP
+([08_sp_altas.sql](08_sp_altas.sql)): el sello lo pone `SYSUTCDATETIME()` y el
+cliente ya no manda esos campos.
+
+**El código de [lib/queries.ts](../lib/queries.ts) ya llama a `executeCrear*`, así
+que las altas del panel no funcionan hasta terminar estos pasos en Fabric:**
+
+1. Correr `08_sp_altas.sql` en la SQL Database.
+2. Exponer los cuatro SPs en **Get data** / **Update schema** y confirmar en el
+   schema explorer los nombres exactos que generó Fabric (`executeCrearEmbarque`,
+   …) y los de sus argumentos.
+3. **Disable** sobre `createembarques`, `createrecepciones`, `createsurtido` y
+   `createetiquetado`. Sólo las mutations de tabla se pueden desactivar; las que
+   vienen de un SP únicamente se eliminan y se vuelven a agregar.
+4. Agregar los `GRANT EXECUTE` de los cuatro SPs a
+   [07_permisos.sql](07_permisos.sql) y correrlo.
+
+Queda un pendiente de permisos: ese script sólo otorga `SELECT` + `EXECUTE`, así
+que el `INSERT` que hoy funciona le llega a la identidad de la API por otra vía
+(rol de la base o dueño del esquema). Mientras eso siga, escribir directo a las
+tablas sigue siendo posible aunque la mutación esté deshabilitada — el *Disable*
+esconde la puerta, no la cierra.
 
 ## Diferencias entre el esquema real y `types/cedis.ts`
 
