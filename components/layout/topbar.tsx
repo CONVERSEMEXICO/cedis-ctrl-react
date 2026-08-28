@@ -1,9 +1,16 @@
 'use client'
 
 import { RefreshCw } from 'lucide-react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { ReportarIncidenciaDialog } from '@/components/incidencias/reportar-incidencia-dialog'
+import { CREACION_POR_RUTA } from '@/components/modulos/configs'
+import { CrearRegistroDialog } from '@/components/modulos/crear-registro-dialog'
+import { RegistrarTurnoDialog } from '@/components/productividad/registrar-turno-dialog'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import type { ModuloOperativo } from '@/types/cedis'
 
 const TITULOS: Record<string, string> = {
   '/': 'Dashboard',
@@ -13,6 +20,16 @@ const TITULOS: Record<string, string> = {
   '/etiquetado': 'Etiquetado',
   '/productividad': 'Productividad',
   '/incidencias': 'Incidencias',
+}
+
+/** Módulo que se preselecciona al reportar una incidencia desde cada ruta. */
+const MODULO_POR_RUTA: Record<string, ModuloOperativo> = {
+  '/embarques': 'embarques',
+  '/recepciones': 'recepciones',
+  '/surtido': 'surtido',
+  '/etiquetado': 'etiquetado',
+  '/productividad': 'productividad',
+  '/incidencias': 'incidencias',
 }
 
 function useFechaLarga() {
@@ -32,9 +49,11 @@ function useFechaLarga() {
 
 export function Topbar() {
   const pathname = usePathname()
-  const router = useRouter()
+  const { cargando, refrescar } = useDatosCedis()
   const fecha = useFechaLarga()
   const titulo = TITULOS[pathname] ?? 'CEDIS ·CTRL'
+  const creacion = CREACION_POR_RUTA[pathname]
+  const modulo = MODULO_POR_RUTA[pathname]
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4 md:px-6">
@@ -45,10 +64,13 @@ export function Topbar() {
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => router.refresh()}>
-          <RefreshCw data-icon="inline-start" />
-          Actualizar
+        <Button variant="outline" size="sm" onClick={() => void refrescar()} disabled={cargando}>
+          <RefreshCw className={cn(cargando && 'animate-spin')} data-icon="inline-start" />
+          <span className="hidden sm:inline">Actualizar</span>
         </Button>
+        {creacion && <CrearRegistroDialog config={creacion} />}
+        {pathname === '/productividad' && <RegistrarTurnoDialog />}
+        <ReportarIncidenciaDialog moduloInicial={modulo} />
       </div>
     </header>
   )

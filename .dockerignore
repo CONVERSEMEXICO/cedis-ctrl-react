@@ -1,0 +1,31 @@
+# Dependencias y artefactos de build — se generan dentro de la imagen
+node_modules
+.next
+out
+
+# Control de versiones y CI
+.git
+.gitignore
+.github
+
+# Variables de entorno: se inyectan en runtime, nunca se copian a la imagen
+.env
+.env.*
+
+# Documentación y material que no participa en el build
+CLAUDE.md
+README.md
+prompts
+sql
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Local
+.DS_Store
+.vercel
+.v0-trash
+.snowflake

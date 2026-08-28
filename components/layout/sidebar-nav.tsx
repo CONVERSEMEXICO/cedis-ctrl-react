@@ -12,6 +12,8 @@ import {
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { useFabricAuth } from '@/hooks/use-fabric-auth'
 import { cn } from '@/lib/utils'
 
 export interface SidebarCounts {
@@ -93,8 +95,10 @@ function LiveClock() {
   )
 }
 
-export function SidebarNav({ counts }: { counts: SidebarCounts }) {
+/** `counts` llega en null mientras corre la primera carga de datos. */
+export function SidebarNav({ counts }: { counts: SidebarCounts | null }) {
   const pathname = usePathname()
+  const { account, logout } = useFabricAuth()
 
   return (
     <aside className="flex h-full w-16 flex-col border-r border-sidebar-border bg-sidebar md:w-60">
@@ -114,7 +118,7 @@ export function SidebarNav({ counts }: { counts: SidebarCounts }) {
         <ul className="flex flex-col gap-0.5">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href
-            const count = item.countKey ? counts[item.countKey] : null
+            const count = item.countKey && counts ? counts[item.countKey] : null
             const Icon = item.icon
             return (
               <li key={item.href}>
@@ -142,10 +146,23 @@ export function SidebarNav({ counts }: { counts: SidebarCounts }) {
         </ul>
       </nav>
 
-      <div className="hidden border-t border-sidebar-border px-4 py-3 md:block">
+      <div className="hidden flex-col gap-2 border-t border-sidebar-border px-4 py-3 md:flex">
         <p className="font-mono text-[11px] leading-tight text-muted-foreground">
           Centro de distribución · Operación en vivo
         </p>
+        {account && (
+          <div className="flex flex-col items-start gap-1">
+            <p
+              className="w-full truncate font-mono text-[11px] leading-tight text-sidebar-foreground"
+              title={account.usuario}
+            >
+              {account.nombre}
+            </p>
+            <Button variant="ghost" size="xs" onClick={logout}>
+              Cerrar sesión
+            </Button>
+          </div>
+        )}
       </div>
     </aside>
   )

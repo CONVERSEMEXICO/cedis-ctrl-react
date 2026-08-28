@@ -1,21 +1,15 @@
-import { Truck } from 'lucide-react'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { EstadoBadge } from '@/components/shared/estado-badge'
-import { PageHeader } from '@/components/shared/page-header'
-import { obtenerEmbarques } from '@/lib/data'
-import { formatFechaHora, formatNumero } from '@/lib/format'
-import { metricasEmbarques } from '@/lib/metrics'
-import { ESTADO_EMBARQUE } from '@/lib/status-config'
+'use client'
 
-export default async function EmbarquesPage() {
-  const embarques = await obtenerEmbarques()
+import { EmbarquesControl } from '@/components/modulos/configs'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
+import { BannerOffline } from '@/components/shared/banner-offline'
+import { PageHeader } from '@/components/shared/page-header'
+import { formatNumero } from '@/lib/format'
+import { metricasEmbarques } from '@/lib/metrics'
+
+export default function EmbarquesPage() {
+  const { datos, offline } = useDatosCedis()
+  const embarques = datos.embarques
   const { totalUnidades, retrasados } = metricasEmbarques(embarques)
 
   return (
@@ -42,53 +36,9 @@ export default async function EmbarquesPage() {
         }
       />
 
-      <div className="overflow-hidden rounded-lg border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Folio</TableHead>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Destino</TableHead>
-              <TableHead>Transportista</TableHead>
-              <TableHead>Andén</TableHead>
-              <TableHead className="text-right">Unidades</TableHead>
-              <TableHead>Programado</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Responsable</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {embarques.map((e) => (
-              <TableRow key={e.id}>
-                <TableCell className="font-mono text-xs text-foreground">{e.folio}</TableCell>
-                <TableCell>{e.cliente}</TableCell>
-                <TableCell className="text-muted-foreground">{e.destino}</TableCell>
-                <TableCell className="text-muted-foreground">{e.transportista}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {e.anden ?? '—'}
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {formatNumero(e.unidades)}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {formatFechaHora(e.fechaProgramada)}
-                </TableCell>
-                <TableCell>
-                  <EstadoBadge config={ESTADO_EMBARQUE[e.estado]} />
-                </TableCell>
-                <TableCell className="text-muted-foreground">{e.responsable}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      {offline.embarques && <BannerOffline />}
 
-      {embarques.length === 0 && (
-        <div className="flex flex-col items-center gap-2 py-16 text-center text-muted-foreground">
-          <Truck className="size-8" aria-hidden />
-          <p className="text-sm">No hay embarques registrados.</p>
-        </div>
-      )}
+      <EmbarquesControl registros={embarques} />
     </div>
   )
 }

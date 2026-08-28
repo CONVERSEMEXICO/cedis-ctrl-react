@@ -50,10 +50,28 @@ const MODULOS: { value: ModuloOperativo; label: string }[] = [
   { value: 'surtido', label: 'Surtido' },
   { value: 'etiquetado', label: 'Etiquetado' },
   { value: 'productividad', label: 'Productividad' },
+  { value: 'incidencias', label: 'Incidencias' },
 ]
 
-export function ReportarIncidenciaDialog() {
+const MODULO_POR_DEFECTO: ModuloOperativo = 'surtido'
+
+/**
+ * `moduloInicial` es el módulo desde el que se abre el diálogo (lo pasa el
+ * topbar según la ruta). Se re-aplica en cada apertura porque el topbar no se
+ * desmonta al navegar entre módulos.
+ */
+export function ReportarIncidenciaDialog({
+  moduloInicial,
+}: {
+  moduloInicial?: ModuloOperativo
+}) {
   const [open, setOpen] = useState(false)
+  const [modulo, setModulo] = useState<ModuloOperativo>(moduloInicial ?? MODULO_POR_DEFECTO)
+
+  function handleOpenChange(abierto: boolean) {
+    if (abierto) setModulo(moduloInicial ?? MODULO_POR_DEFECTO)
+    setOpen(abierto)
+  }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -64,8 +82,8 @@ export function ReportarIncidenciaDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger render={<Button size="sm" variant="destructive" />}>
         <Plus data-icon="inline-start" />
         Reportar incidencia
       </DialogTrigger>
@@ -80,7 +98,11 @@ export function ReportarIncidenciaDialog() {
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="modulo">Módulo</FieldLabel>
-              <Select name="modulo" defaultValue="surtido">
+              <Select
+                name="modulo"
+                value={modulo}
+                onValueChange={(valor) => setModulo(String(valor) as ModuloOperativo)}
+              >
                 <SelectTrigger id="modulo">
                   <SelectValue>
                     {(value: ModuloOperativo) =>

@@ -1,28 +1,54 @@
-import { obtenerDatosCedis } from '@/lib/data'
-import { incidenciasAbiertas } from '@/lib/metrics'
+'use client'
+
+// Shell del panel. Dos decisiones viven aquí:
+//   1. Con Entra ID configurado, sin sesión no se pinta nada de la operación:
+//      va la <PantallaLogin />.
+//   2. Los conteos del sidebar salen de los datos que ya cargó
+//      <ProveedorDatosCedis>, no de un fetch propio.
+
+import { Loader2 } from 'lucide-react'
 import { SidebarNav } from '@/components/layout/sidebar-nav'
 import { Topbar } from '@/components/layout/topbar'
+import { PantallaLogin } from '@/components/auth/pantalla-login'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
+import { useFabricAuth } from '@/hooks/use-fabric-auth'
+import { incidenciasAbiertas } from '@/lib/metrics'
 
-export async function AppShell({ children }: { children: React.ReactNode }) {
-  const data = await obtenerDatosCedis()
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const { habilitado, isAuthenticated } = useFabricAuth()
+  const { datos, listo } = useDatosCedis()
+
+  if (habilitado && !isAuthenticated) return <PantallaLogin />
 
   const counts = {
-    embarques: data.embarques.length,
-    recepciones: data.recepciones.length,
-    surtido: data.pedidosSurtido.length,
-    etiquetado: data.lotesEtiquetado.length,
-    productividad: data.productividad.length,
-    incidencias: incidenciasAbiertas(data.incidencias).length,
+    embarques: datos.embarques.length,
+    recepciones: datos.recepciones.length,
+    surtido: datos.pedidosSurtido.length,
+    etiquetado: datos.lotesEtiquetado.length,
+    productividad: datos.productividad.length,
+    incidencias: incidenciasAbiertas(datos.incidencias).length,
   }
 
   return (
     <div className="flex h-dvh flex-col">
       <div className="hazard-stripe h-1 w-full shrink-0" aria-hidden />
       <div className="flex min-h-0 flex-1">
-        <SidebarNav counts={counts} />
+        <SidebarNav counts={listo ? counts : null} />
         <div className="flex min-h-0 flex-1 flex-col">
           <Topbar />
-          <main className="flex-1 overflow-y-auto bg-background">{children}</main>
+          <main className="flex-1 overflow-y-auto bg-background">
+            {listo ? (
+              children
+            ) : (
+              <p
+                role="status"
+                className="flex h-full items-center justify-center gap-2 font-mono text-xs text-muted-foreground"
+              >
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                Cargando la operación…
+              </p>
+            )}
+          </main>
         </div>
       </div>
     </div>

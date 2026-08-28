@@ -1,3 +1,5 @@
+'use client'
+
 import { AlertTriangle, Gauge, PackageCheck, Tag, Truck, Warehouse } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CumplimientoChart, type CumplimientoDato } from '@/components/dashboard/cumplimiento-chart'
@@ -7,7 +9,7 @@ import {
   type SeveridadDato,
 } from '@/components/dashboard/incidencias-severidad-chart'
 import { KpiTile } from '@/components/dashboard/kpi-tile'
-import { obtenerDatosCedis } from '@/lib/data'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import {
   conteoPorSeveridad,
   incidenciasAbiertas,
@@ -21,9 +23,10 @@ import {
 import { SEVERIDAD_CONFIG } from '@/lib/status-config'
 import type { Severidad } from '@/types/cedis'
 
-export default async function DashboardPage() {
+export default function DashboardPage() {
+  const { datos } = useDatosCedis()
   const { embarques, recepciones, pedidosSurtido, lotesEtiquetado, incidencias, productividad } =
-    await obtenerDatosCedis()
+    datos
 
   const mEmbarques = metricasEmbarques(embarques)
   const mRecepciones = metricasRecepciones(recepciones)
