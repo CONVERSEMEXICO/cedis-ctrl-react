@@ -45,6 +45,9 @@ async function ejecutar(operacion: () => Promise<unknown>): Promise<ResultadoAcc
     await operacion()
     return { ok: true }
   } catch (error) {
+    // El toast solo muestra el mensaje; el error completo (incluidos los
+    // `errors` que devuelve Fabric) queda en consola para poder diagnosticar.
+    console.error('[cedis] falló la escritura contra Fabric:', error)
     return {
       ok: false,
       error: (error as Error).message,

@@ -28,6 +28,8 @@ Por eso cada SP de aquí termina con **un solo `SELECT`** de la fila afectada: e
 | 06 | [06_sp_productividad.sql](06_sp_productividad.sql) | `dbo.RegistrarProductividad` |
 | 07 | [07_permisos.sql](07_permisos.sql) | `GRANT SELECT` / `GRANT EXECUTE` a la identidad de la API |
 | 08 | [08_sp_altas.sql](08_sp_altas.sql) | `dbo.CrearEmbarque`, `dbo.CrearRecepcion`, `dbo.CrearPedidoSurtido`, `dbo.CrearLoteEtiquetado` — altas con sello de auditoría del server |
+| 09 | [09_diagnostico_columnas.sql](09_diagnostico_columnas.sql) | Solo lectura: tipos y longitudes reales de las columnas contra lo que escriben las altas |
+| 10 | [10_ampliar_id.sql](10_ampliar_id.sql) | Amplía `id` a `NVARCHAR(50)` donde no cabe el GUID que generan las altas. Idempotente |
 
 Ejecútalos en el editor SQL de la Fabric SQL Database (o con `sqlcmd` / Azure Data
 Studio contra la cadena de conexión del *SQL analytics endpoint* de escritura).
@@ -35,6 +37,19 @@ Studio contra la cadena de conexión del *SQL analytics endpoint* de escritura).
 Después de correrlos: **Fabric > tu API for GraphQL > Manage data**, marca los SPs
 nuevos y las columnas agregadas, y guarda. Los objetos no aparecen en el esquema
 hasta que se re-exponen.
+
+## "The data in the request exceeds the limits in data source."
+
+Es el mensaje con el que Fabric envuelve el error 8152 de SQL (*String or binary
+data would be truncated*): el valor no cabe en su columna. Habla de "la
+petición", pero el valor que no cabe puede ser uno que genera el propio SP —el
+caso típico es `id`, que las altas arman con `CONVERT(NVARCHAR(36), NEWID())`
+mientras las filas históricas traen ids cortos (`emb-1`) y la columna se creó a
+esa medida.
+
+Corre [09_diagnostico_columnas.sql](09_diagnostico_columnas.sql) para ver qué
+columna se queda corta y [10_ampliar_id.sql](10_ampliar_id.sql) si el culpable
+es `id`.
 
 ## Mapa mutación ↔ stored procedure
 
