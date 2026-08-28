@@ -73,7 +73,10 @@ export function useAuthMsal(): AuthFabric {
 
   const getAccessToken = useCallback(async () => {
     const cuenta = instance.getActiveAccount() ?? instance.getAllAccounts()[0]
-    if (!cuenta) return null
+    if (!cuenta) {
+      console.warn('[cedis] sin cuenta activa de MSAL: la carga usará datos seed')
+      return null
+    }
     try {
       const resultado = await instance.acquireTokenSilent({ ...loginRequest, account: cuenta })
       return resultado.accessToken
@@ -84,10 +87,12 @@ export function useAuthMsal(): AuthFabric {
         try {
           const resultado = await instance.acquireTokenPopup(loginRequest)
           return resultado.accessToken
-        } catch {
+        } catch (errorPopup) {
+          console.error('[cedis] acquireTokenPopup falló —', errorPopup)
           return null
         }
       }
+      console.error('[cedis] acquireTokenSilent falló —', error)
       return null
     }
   }, [instance])

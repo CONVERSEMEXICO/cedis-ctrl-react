@@ -42,40 +42,56 @@ export interface ResultadoDatos<T> {
   sesionExpirada: boolean
 }
 
-async function conRespaldo<T>(fn: () => Promise<T>, respaldo: T): Promise<ResultadoDatos<T>> {
+/**
+ * Corre la carga de un conjunto y, si falla, devuelve el respaldo seed.
+ *
+ * El error se registra en la consola del navegador con el nombre del conjunto:
+ * sin eso, "Modo offline" es indistinguible entre no hay token, la API no
+ * responde y Fabric devolvió un error de esquema.
+ */
+async function conRespaldo<T>(
+  conjunto: keyof DatosCedis,
+  fn: () => Promise<T>,
+  respaldo: T,
+): Promise<ResultadoDatos<T>> {
   try {
     return { datos: await fn(), offline: false, sesionExpirada: false }
   } catch (error) {
+    console.error(`[cedis] ${conjunto}: cayó al respaldo seed —`, error)
     return { datos: respaldo, offline: true, sesionExpirada: esSesionExpirada(error) }
   }
 }
 
 export async function cargarEmbarques(token: Token): Promise<ResultadoDatos<Embarque[]>> {
-  return conRespaldo(() => getEmbarques(token), embarquesSeed)
+  return conRespaldo('embarques', () => getEmbarques(token), embarquesSeed)
 }
 
 export async function cargarRecepciones(token: Token): Promise<ResultadoDatos<Recepcion[]>> {
-  return conRespaldo(() => getRecepciones(token), recepcionesSeed)
+  return conRespaldo('recepciones', () => getRecepciones(token), recepcionesSeed)
 }
 
 export async function cargarPedidosSurtido(token: Token): Promise<ResultadoDatos<PedidoSurtido[]>> {
-  return conRespaldo(() => getPedidosSurtido(token), pedidosSurtidoSeed)
+  return conRespaldo('pedidosSurtido', () => getPedidosSurtido(token), pedidosSurtidoSeed)
 }
 
 export async function cargarLotesEtiquetado(
   token: Token,
 ): Promise<ResultadoDatos<LoteEtiquetado[]>> {
-  return conRespaldo(() => getLotesEtiquetado(token), lotesEtiquetadoSeed)
+  return conRespaldo('lotesEtiquetado', () => getLotesEtiquetado(token), lotesEtiquetadoSeed)
 }
 
 export async function cargarIncidencias(token: Token): Promise<ResultadoDatos<Incidencia[]>> {
-  return conRespaldo(() => getIncidencias(token), incidenciasSeed)
+  return conRespaldo('incidencias', () => getIncidencias(token), incidenciasSeed)
 }
 
 export async function cargarRegistrosProductividad(
   token: Token,
 ): Promise<ResultadoDatos<RegistroProductividad[]>> {
-  return conRespaldo(() => getRegistrosProductividad(token), registrosProductividadSeed)
+  return conRespaldo(
+    'productividad',
+    () => getRegistrosProductividad(token),
+    registrosProductividadSeed,
+  )
 }
 
 /** Los seis conjuntos que consume el panel. */
