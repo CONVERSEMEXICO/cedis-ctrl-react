@@ -27,7 +27,7 @@ El token de Fabric es **del usuario, no de la app**: lo obtiene el navegador con
 
 - [lib/auth-config.ts](lib/auth-config.ts) — `msalConfig` (cache en `sessionStorage`), `loginRequest` y la bandera `entraConfigurado`. El scope `https://analysis.windows.net/powerbi/api/GraphQLApi.Execute.All` es exacto y obligatorio: **no lo cambies**.
 - [components/providers/msal-provider.tsx](components/providers/msal-provider.tsx) — instancia única de `PublicClientApplication` fuera del árbol de React, `initialize()` + `handleRedirectPromise()` antes de montar la app, `LOGIN_SUCCESS` → `setActiveAccount`. Publica el estado en el contexto de `useFabricAuth`.
-- [hooks/use-fabric-auth.ts](hooks/use-fabric-auth.ts) — `useFabricAuth()`: `habilitado`, `isAuthenticated`, `account`, `login()`, `logout()`, `getAccessToken()` (silent → popup si Entra pide interacción). Toda la app usa este hook, **nunca los hooks de msal-react directamente**: así el árbol sigue funcionando cuando no hay `<MsalProvider>`.
+- [hooks/use-fabric-auth.ts](hooks/use-fabric-auth.ts) — `useFabricAuth()`: `habilitado`, `isAuthenticated`, `account` (con `roles`, el claim del ID token), `cargando`, `login()`, `logout()`, `getAccessToken()` y `getTokens()` (silent → popup si Entra pide interacción; una sola adquisición devuelve los dos tokens). Toda la app usa este hook, **nunca los hooks de msal-react directamente**: así el árbol sigue funcionando cuando no hay `<MsalProvider>`.
 - [hooks/use-operacion-cedis.ts](hooks/use-operacion-cedis.ts) — envoltura de toda escritura: consigue el token, corre la operación, avisa por toast y refresca. El 401 de Fabric se trata aparte (`MENSAJE_SESION_EXPIRADA` + `logout()`).
 
 Las variables son todas `NEXT_PUBLIC_*` (`ENTRA_CLIENT_ID`, `ENTRA_TENANT_ID`, `ENTRA_REDIRECT_URI`, `FABRIC_GRAPHQL_ENDPOINT`) porque MSAL corre en el navegador; Next las inlina **en tiempo de build**, así que en Docker van como build args, no como env de runtime.
@@ -41,11 +41,51 @@ Tres archivos encadenados, y es la parte del código que hay que entender antes 
 - [lib/graphql.ts](lib/graphql.ts) — cliente `fetchGraphQL(query, variables, accessToken)` genérico contra la GraphQL API de **Microsoft Fabric SQL Database**. Lee `NEXT_PUBLIC_FABRIC_GRAPHQL_ENDPOINT` de env; sin token o sin endpoint lanza `GraphQLRequestError` de inmediato, y marca `sesionExpirada` cuando Fabric responde 401. Usa `cache: 'no-store'`.
 - [lib/queries.ts](lib/queries.ts) — una función por operación. Los cinco módulos con tabla publicada (embarques, recepciones, surtido, etiquetado, productividad) tienen su documento GraphQL real; **incidencias sigue en stub `# TODO`** porque esa tabla todavía no está expuesta en la API. Convenciones del esquema de Fabric que hay que respetar tal cual: toda query devuelve un Connection (`{ items, endCursor, hasNextPage }`), la pluralización la decide Fabric (`surtidos`, `etiquetados`, `productividads`) aunque los `*Input` conserven el nombre de la tabla, y **toda escritura va por stored procedure** (`executeCrear*`, `executeActualizarEstado*`, `executeRegistrarProductividad`), nunca por las mutations `create`/`update` genéricas: el input que Fabric genera por tabla expone `created_at` y `updated_at`, y esas columnas las tiene que sellar el server. Los SP viven en [sql/](sql/) — ver la nota "Auditoría" en [sql/README.md](sql/README.md).
 - [lib/data.ts](lib/data.ts) — envuelve cada query en `conRespaldo()`, que hace `try/catch` y devuelve los arreglos de [lib/seed-data.ts](lib/seed-data.ts) cuando la API falla (incluido el caso "no hay token"). `cargarDatosCedis(token)` trae los seis conjuntos en paralelo y devuelve `{ datos, offline, sesionExpirada }`, con una bandera de offline **por conjunto**.
-- [lib/actions.ts](lib/actions.ts) — la única vía de escritura. Ya no son server actions: reciben el token como primer argumento y la mutación sale del navegador. Cada una devuelve `ResultadoAccion` (`{ ok }` / `{ ok: false, error, sesionExpirada }`) en vez de lanzar.
+- [lib/actions.ts](lib/actions.ts) — la única vía de escritura. **No hablan con Fabric**: hacen `POST /api/cedis/<operacion>` al Route Handler, que es donde se verifica el rol (ver "Autorización" abajo). Reciben `TokensCedis` como primer argumento y devuelven `ResultadoAccion` (`{ ok }` / `{ ok: false, error, sesionExpirada }`) en vez de lanzar.
 
 Quien llama a `lib/data.ts` es **solo** [`<ProveedorDatosCedis>`](components/providers/cedis-data-provider.tsx): pide el token, carga los seis conjuntos y los expone con `useDatosCedis()` (`datos`, `offline`, `listo`, `cargando`, `refrescar`). Las páginas leen de ese hook — nunca de `lib/queries.ts` ni de `lib/seed-data.ts` — y usan `offline.<conjunto>` para pintar `<BannerOffline />`. `refrescar()` es lo que sustituye al `revalidatePath` de las server actions: lo llaman el botón "Actualizar" del topbar y `useOperacionCedis` después de cada escritura.
 
 Las entidades de `types/cedis.ts` espejean columna por columna las tablas de Fabric, snake_case incluido (`hora_salida`, `motivo_rechazo`, `created_at`): no hay capa de mapeo, así que renombrar un campo del esquema es renombrarlo aquí.
+
+### Autorización: app roles de Entra ID
+
+La autenticación dice *quién* es el usuario; esta capa dice *qué puede hacer*. La fuente de verdad es el claim `roles` del **ID token**, poblado por los App roles que se configuran a mano en el registro de aplicación de Azure Portal: la app los interpreta, nunca los crea ni los asigna.
+
+Tres roles, con jerarquía `Administrador > Supervisor > Operador`. Un usuario con varios roles usa el de mayor privilegio.
+
+- [lib/auth/roles.ts](lib/auth/roles.ts) — puro, sin React ni MSAL, porque lo importan las dos orillas. `Role`, `getHighestRole()`, `rolesDeClaim()` (el claim llega como arreglo, como string suelto o ausente) y `rolDeSesion()`.
+- [lib/auth/permissions.ts](lib/auth/permissions.ts) — `Action`, la matriz `MATRIZ_PERMISOS` y `hasPermission()`. La matriz es declarativa a propósito: cada acción lista sus roles en vez de derivarse de la jerarquía, así que **agregar una acción obliga a decidir quién puede ejecutarla**. El mismo objeto lo usan la UI y el servidor.
+- [hooks/use-cedis-role.ts](hooks/use-cedis-role.ts) — `useCedisRole()`: `{ role, isLoading, isDemoMode, usuario }`. Lee la cuenta por `useFabricAuth()`, no por los hooks de msal-react.
+- [hooks/use-permission.ts](hooks/use-permission.ts) — `usePermission(action)`. **Es el único punto por el que la UI debe preguntar por permisos**: no escribas la jerarquía a mano en un componente.
+
+**Los dos fallbacks no son el mismo, y confundirlos es un agujero de seguridad:**
+
+| Situación | Rol | Por qué |
+|---|---|---|
+| Sin cuenta activa de MSAL (Entra sin configurar) | `CEDIS.Administrador` + `isDemoMode` | Poder recorrer la UI completa con los datos seed |
+| Sesión real **sin ningún app role asignado** | `CEDIS.Operador` | Si hay sesión, el directorio es la autoridad: "sin rol" es sin privilegios, **nunca** todos |
+
+En modo demostración se pinta [`<BannerDemo />`](components/auth/banner-demo.tsx) entre el topbar y el contenido — fijo y no bloqueante.
+
+#### Enforcement en el servidor
+
+Ocultar un botón no es seguridad. Toda escritura pasa por [app/api/cedis/[operacion]/route.ts](app/api/cedis/%5Boperacion%5D/route.ts), y su registro `OPERACIONES` mapea cada operación a la `Action` que exige. **Es un solo Route Handler a propósito:** un endpoint por módulo repartiría el guard en doce archivos, donde el que falte pasa desapercibido.
+
+- [lib/auth/requirePermission.ts](lib/auth/requirePermission.ts) — `requirePermission(request, action)`: valida la sesión, saca el rol del token verificado y exige el permiso. Lanza `ErrorAutorizacion` (401 `unauthorized` / 403 `forbidden`); `respuestaSinPermiso()` la traduce a `Response`.
+- [lib/auth/entra-token.ts](lib/auth/entra-token.ts) — verificación del ID token con Web Crypto y sin dependencias nuevas: firma RS256 contra el JWKS del tenant (con cache y refetch al ver un `kid` desconocido), `alg` validado **antes** de mirar la firma, más `iss`, `aud`, `tid`, `exp` y `nbf`.
+
+**Por qué viajan dos tokens** ([lib/auth/tokens.ts](lib/auth/tokens.ts)): los app roles solo aparecen en tokens cuya audiencia es la propia app. El access token que MSAL pide para Fabric tiene `aud` de Microsoft y **no trae el claim `roles`**, así que no sirve para autorizar. El cliente manda entonces el ID token en `Authorization: Bearer` —que el servidor verifica— y el token de Fabric en `X-Fabric-Token`, que el servidor **solo reenvía y nunca usa para decidir permisos**.
+
+Las **lecturas** siguen saliendo del navegador (`lib/data.ts`): las puede hacer cualquier rol y pasarlas por el server rompería el respaldo seed.
+
+#### Al agregar una escritura
+
+1. La `Action` en `lib/auth/permissions.ts` y su renglón en la matriz.
+2. La entrada en `OPERACIONES` del Route Handler, con su `accion`.
+3. La función en `lib/actions.ts` que hace el `POST`.
+4. El `usePermission(...)` que gobierna el control en la UI.
+
+`useOperacionCedis().ejecutar(accion, operacion, exito)` exige la acción como **primer argumento obligatorio**: toda escritura pasa por ahí, así que no se puede agregar una mutación sin declarar quién la puede ejecutar.
 
 ### Indicadores: `lib/metrics.ts`
 
@@ -74,11 +114,15 @@ Los cuatro módulos operativos con tabla (embarques, recepciones, surtido, etiqu
 
 Casos especiales que ya resuelve la config: etiquetado declara `estadoQuePideMotivo: 'rechazado'` (el SP exige motivo), y surtido/recepciones reenvían `operador` / `anden` del propio registro porque sus SP los conservan con `COALESCE`.
 
+Los permisos sí viven en la vista, no en la config, porque son iguales para los cuatro módulos: el botón de alta y la columna de borrar se ocultan sin permiso —y el `colSpan` de la fila vacía se ajusta—, mientras el select de estatus se queda visible pero deshabilitado (cambiar el estatus es la operación del piso: la puede hacer cualquier rol).
+
 ### Árbol de la app: server shell, datos en el cliente
 
 `app/layout.tsx` (server, solo metadata y fuentes) → `<ProveedorMsal>` → `<ProveedorDatosCedis>` → `AppShell` → `SidebarNav` + `Topbar` + `main`. De `AppShell` para abajo **todo es `'use client'`**: es donde vive el token y, con él, los datos.
 
-`AppShell` toma dos decisiones: si Entra está configurado y no hay sesión pinta `<PantallaLogin />` en lugar del panel, y mientras `listo` es false pinta "Cargando la operación…" en `main` (el sidebar recibe `counts: null` y oculta los badges).
+`AppShell` toma dos decisiones: si Entra está configurado y no hay sesión pinta `<PantallaLogin />` en lugar del panel, y mientras `listo` es false pinta "Cargando la operación…" en `main` (el sidebar recibe `counts: null` y oculta los badges). Debajo del topbar monta `<BannerDemo />`, que solo se pinta sin cuenta activa de Entra.
+
+El pie del sidebar muestra el nombre del usuario y su rol como badge (`ROL_CONFIG` de `lib/status-config.ts`, con el mismo contrato `EstadoConfig` que el resto).
 
 Cada `app/<modulo>/page.tsx` es un client component que lee `useDatosCedis()`, llama a `lib/metrics.ts` y renderiza `PageHeader` + la vista del módulo. Ya no hay fetch por página ni `async` en las páginas.
 
@@ -126,7 +170,8 @@ Fronteras de propiedad que reducen la colisión:
 |---|---|---|
 | Presentación | v0 | `components/ui/`, `components/dashboard/`, `components/layout/`, `app/globals.css`, el JSX de `app/*/page.tsx` |
 | Datos y dominio | humanos | `lib/` (todo), `types/cedis.ts`, `hooks/`, `components/providers/`, `components/modulos/`, `next.config.mjs` |
+| Autorización | humanos | `lib/auth/`, `app/api/`, `hooks/use-cedis-role.ts`, `hooks/use-permission.ts`, `hooks/use-operacion-cedis.ts` |
 
-`components/modulos/` es presentación pero está cableado a las operaciones de escritura: si v0 lo regenera, las mutaciones se rompen en silencio. Lo mismo con el JSX de `app/*/page.tsx`: su primera línea es `'use client'` y leen de `useDatosCedis()` — una regeneración que las devuelva a server components `async` deja la app sin datos.
+`components/modulos/` es presentación pero está cableado a las operaciones de escritura **y a los checks de permisos**: si v0 lo regenera, las mutaciones se rompen en silencio y los controles vuelven a aparecer para todos los roles (el servidor los sigue rechazando con 403, pero la UI queda ofreciendo lo que no se puede hacer). Al revisar un PR de v0 que toque `components/modulos/`, `components/productividad/` o `app/*/page.tsx`, **busca `usePermission` desaparecidos**. Lo mismo con el JSX de `app/*/page.tsx`: su primera línea es `'use client'` y leen de `useDatosCedis()` — una regeneración que las devuelva a server components `async` deja la app sin datos.
 
 Ramas: `feat/*` y `chore/*` para trabajo a mano, `v0/*` para lo que empuja v0. Sin `develop` — las preview URLs de Vercel cubren esa función.

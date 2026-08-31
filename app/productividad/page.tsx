@@ -10,12 +10,19 @@ import { RegistrarTurnoDialog } from '@/components/productividad/registrar-turno
 import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { BannerOffline } from '@/components/shared/banner-offline'
 import { PageHeader } from '@/components/shared/page-header'
+import { useCedisRole } from '@/hooks/use-cedis-role'
+import { usePermission } from '@/hooks/use-permission'
 import { formatNumero } from '@/lib/format'
-import { metricasProductividad, unidadesPorHora } from '@/lib/metrics'
+import { metricasProductividad, productividadVisible, unidadesPorHora } from '@/lib/metrics'
 
 export default function ProductividadPage() {
   const { datos, offline } = useDatosCedis()
-  const registros = datos.productividad
+  const { usuario } = useCedisRole()
+  // Un Operador solo ve sus propios turnos: la tabla, la gráfica y los tres
+  // indicadores parten del mismo arreglo filtrado. Supervisor y Administrador
+  // tienen `ver_productividad_todos` y lo ven completo.
+  const verTodos = usePermission('ver_productividad_todos')
+  const registros = productividadVisible(datos.productividad, verTodos, usuario?.name ?? null)
   const { promedioUnidadesHora, pctCumplimientoMeta, turnosBajoMeta } =
     metricasProductividad(registros)
 
@@ -34,6 +41,12 @@ export default function ProductividadPage() {
       />
 
       {offline.productividad && <BannerOffline />}
+
+      {!verTodos && (
+        <p className="text-xs text-muted-foreground">
+          Estás viendo únicamente los turnos registrados a tu nombre.
+        </p>
+      )}
 
       <section aria-label="Indicadores de productividad">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

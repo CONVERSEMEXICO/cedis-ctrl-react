@@ -40,6 +40,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useOperacionCedis, type OperacionCedis } from '@/hooks/use-operacion-cedis'
+import { usePermission } from '@/hooks/use-permission'
+import type { Action } from '@/lib/auth/permissions'
 import { cn } from '@/lib/utils'
 
 const TODOS = 'todos'
@@ -52,6 +54,11 @@ export function ModuleControlView<T extends RegistroBase>({
   registros: T[]
 }) {
   const { ejecutar: ejecutarOperacion } = useOperacionCedis()
+  // El select de estatus se queda visible para todos los roles —cambiar el
+  // estatus es la operación del piso— pero se deshabilita sin permiso. El botón
+  // de borrar sí desaparece: no hay estado intermedio que valga la pena mostrar.
+  const puedeCambiarEstado = usePermission('cambiar_estatus_registro')
+  const puedeEliminar = usePermission('eliminar_registro')
   const [filtro, setFiltro] = useState<string>(TODOS)
   const [idEnCurso, setIdEnCurso] = useState<string | null>(null)
   const [aEliminar, setAEliminar] = useState<T | null>(null)
@@ -60,9 +67,14 @@ export function ModuleControlView<T extends RegistroBase>({
 
   const visibles = filtro === TODOS ? registros : registros.filter((r) => r.estado === filtro)
 
-  async function ejecutar(id: string, operacion: OperacionCedis, exito: string) {
+  async function ejecutar(
+    id: string,
+    accion: Action,
+    operacion: OperacionCedis,
+    exito: string,
+  ) {
     setIdEnCurso(id)
-    await ejecutarOperacion(operacion, exito)
+    await ejecutarOperacion(accion, operacion, exito)
     setIdEnCurso(null)
   }
 
@@ -75,7 +87,8 @@ export function ModuleControlView<T extends RegistroBase>({
     }
     void ejecutar(
       registro.id,
-      (token) => config.cambiarEstado(token, registro, estado),
+      'cambiar_estatus_registro',
+      (tokens) => config.cambiarEstado(tokens, registro, estado),
       'Estatus actualizado',
     )
   }
@@ -87,7 +100,8 @@ export function ModuleControlView<T extends RegistroBase>({
     setPideMotivo(null)
     void ejecutar(
       registro.id,
-      (token) => config.cambiarEstado(token, registro, estado, motivo.trim()),
+      'cambiar_estatus_registro',
+      (tokens) => config.cambiarEstado(tokens, registro, estado, motivo.trim()),
       'Estatus actualizado',
     )
   }
@@ -96,7 +110,12 @@ export function ModuleControlView<T extends RegistroBase>({
     const registro = aEliminar
     if (!registro) return
     setAEliminar(null)
-    void ejecutar(registro.id, (token) => config.eliminar(token, registro.id), 'Registro eliminado')
+    void ejecutar(
+      registro.id,
+      'eliminar_registro',
+      (tokens) => config.eliminar(tokens, registro.id),
+      'Registro eliminado',
+    )
   }
 
   return (
@@ -147,9 +166,11 @@ export function ModuleControlView<T extends RegistroBase>({
                 </TableHead>
               ))}
               <TableHead>Estatus</TableHead>
-              <TableHead className="w-10">
-                <span className="sr-only">Eliminar</span>
-              </TableHead>
+              {puedeEliminar && (
+                <TableHead className="w-10">
+                  <span className="sr-only">Eliminar</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -167,7 +188,7 @@ export function ModuleControlView<T extends RegistroBase>({
                     <Select
                       value={registro.estado}
                       onValueChange={(valor) => alCambiarEstado(registro, String(valor))}
-                      disabled={ocupado}
+                      disabled={ocupado || !puedeCambiarEstado}
                     >
                       <SelectTrigger
                         size="sm"
@@ -195,24 +216,26 @@ export function ModuleControlView<T extends RegistroBase>({
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="destructive"
-                      size="icon-sm"
-                      disabled={ocupado}
-                      onClick={() => setAEliminar(registro)}
-                      aria-label={`Eliminar ${config.singular}`}
-                    >
-                      <X />
-                    </Button>
-                  </TableCell>
+                  {puedeEliminar && (
+                    <TableCell>
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        disabled={ocupado}
+                        onClick={() => setAEliminar(registro)}
+                        aria-label={`Eliminar ${config.singular}`}
+                      >
+                        <X />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               )
             })}
             {visibles.length === 0 && (
               <TableRow className="hover:bg-transparent">
                 <TableCell
-                  colSpan={config.columnas.length + 2}
+                  colSpan={config.columnas.length + (puedeEliminar ? 2 : 1)}
                   className="py-12 text-center text-sm text-muted-foreground"
                 >
                   No hay registros con este filtro.

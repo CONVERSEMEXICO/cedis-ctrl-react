@@ -1,34 +1,30 @@
 // Operaciones de escritura de los módulos operativos.
 //
-// Ya no son server actions: con Entra ID el token es del usuario y vive en el
-// navegador (sessionStorage, vía MSAL), así que la mutación sale del cliente y
-// cada operación recibe el token como primer argumento. Sigue el mismo
-// contrato de antes —devuelven `ResultadoAccion` en vez de lanzar, para que la
-// vista muestre el toast de error sin romper el render—, pero el refresco ya no
-// es `revalidatePath`: lo hace <ProveedorDatosCedis> con `refrescar()`, que es
-// lo que usa el hook `useOperacionCedis`.
+// Ya no hablan con Fabric: hablan con los Route Handlers de
+// app/api/cedis/[operacion]/route.ts, que son los que verifican el permiso del
+// rol antes de tocar la GraphQL API. Ocultar un botón en la UI no es seguridad
+// —el cliente se puede inspeccionar y la función handler se puede llamar a
+// mano—, así que la mutación tiene que pasar por un punto donde el rol se
+// valide contra un token firmado por Entra ID.
+//
+// Cada operación recibe los dos tokens (lib/auth/tokens.ts): el ID token, que
+// es el que trae el claim `roles` y el servidor verifica, y el token de Fabric,
+// que el servidor solo reenvía. Los consigue `useOperacionCedis` con
+// `getTokens()`.
+//
+// El contrato de salida no cambia: `ResultadoAccion` en vez de lanzar, para que
+// la vista muestre el toast sin romper el render. Se agrega un caso nuevo, el
+// 403, que llega con el mensaje de "sin permisos".
 
-import { esSesionExpirada } from '@/lib/graphql'
-import {
-  actualizarEstadoEmbarque,
-  actualizarEstadoEtiquetado,
-  actualizarEstadoRecepcion,
-  actualizarEstadoSurtido,
-  crearEmbarque,
-  crearLoteEtiquetado,
-  crearPedidoSurtido,
-  crearRecepcion,
-  eliminarEmbarque,
-  eliminarLoteEtiquetado,
-  eliminarPedidoSurtido,
-  eliminarRecepcion,
-  eliminarRegistroProductividad,
-  registrarProductividad,
-  type CrearEmbarqueInput,
-  type CrearEtiquetadoInput,
-  type CrearRecepcionInput,
-  type CrearSurtidoInput,
-  type RegistrarProductividadInput,
+import { MENSAJE_SIN_PERMISO } from '@/lib/auth/permissions'
+import type { TokensCedis } from '@/lib/auth/tokens'
+import { MENSAJE_SESION_EXPIRADA } from '@/lib/graphql'
+import type {
+  CrearEmbarqueInput,
+  CrearEtiquetadoInput,
+  CrearRecepcionInput,
+  CrearSurtidoInput,
+  RegistrarProductividadInput,
 } from '@/lib/queries'
 import type {
   EstadoEmbarque,
@@ -38,129 +34,192 @@ import type {
   ResultadoAccion,
 } from '@/types/cedis'
 
-type Token = string | null
+/** Mensaje de fallo de red al llamar al propio servidor. */
+const ERROR_RED = 'No se pudo contactar al servidor. Verifica tu conexión.'
 
-async function ejecutar(operacion: () => Promise<unknown>): Promise<ResultadoAccion> {
+/** Sin token de Fabric no hay escritura posible: la app está en solo lectura. */
+export const SIN_CONEXION_FABRIC =
+  'Sin conexión con Microsoft Fabric: el cambio no se guardó.'
+
+interface RespuestaApi {
+  ok?: true
+  error?: string
+  mensaje?: string
+}
+
+/**
+ * Llama al Route Handler de una operación.
+ *
+ * @param operacion - Clave del registro de OPERACIONES del Route Handler.
+ * @param tokens - ID token (identidad) y access token de Fabric.
+ * @param cuerpo - Argumentos de la operación, ya serializables.
+ */
+async function invocar(
+  operacion: string,
+  tokens: TokensCedis,
+  cuerpo: Record<string, unknown>,
+): Promise<ResultadoAccion> {
+  if (!tokens.fabric) {
+    // Sin token de Fabric no hay nada que escribir. No se marca como sesión
+    // vencida: quien sabe distinguir entre "modo demostración" y "el token se
+    // cayó" es `useOperacionCedis`, que ya lo resuelve antes de llegar aquí.
+    // Esto es el respaldo para un llamador directo.
+    return { ok: false, error: SIN_CONEXION_FABRIC, sesionExpirada: false }
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Fabric-Token': tokens.fabric,
+  }
+  if (tokens.identidad) headers.Authorization = `Bearer ${tokens.identidad}`
+
+  let respuesta: Response
   try {
-    await operacion()
-    return { ok: true }
+    respuesta = await fetch(`/api/cedis/${operacion}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(cuerpo),
+      cache: 'no-store',
+    })
   } catch (error) {
-    // El toast solo muestra el mensaje; el error completo (incluidos los
-    // `errors` que devuelve Fabric) queda en consola para poder diagnosticar.
-    console.error('[cedis] falló la escritura contra Fabric:', error)
-    return {
-      ok: false,
-      error: (error as Error).message,
-      sesionExpirada: esSesionExpirada(error),
-    }
+    console.error(`[cedis] ${operacion}: no se pudo llamar al servidor —`, error)
+    return { ok: false, error: ERROR_RED, sesionExpirada: false }
+  }
+
+  if (respuesta.ok) return { ok: true }
+
+  const datos = (await respuesta.json().catch(() => ({}))) as RespuestaApi
+
+  if (respuesta.status === 403) {
+    return { ok: false, error: datos.mensaje ?? MENSAJE_SIN_PERMISO, sesionExpirada: false }
+  }
+  if (respuesta.status === 401) {
+    return { ok: false, error: datos.mensaje ?? MENSAJE_SESION_EXPIRADA, sesionExpirada: true }
+  }
+
+  console.error(`[cedis] ${operacion} falló (${respuesta.status}):`, datos)
+  return {
+    ok: false,
+    error: datos.mensaje ?? `El servidor respondió ${respuesta.status}`,
+    sesionExpirada: false,
   }
 }
 
 // --- Embarques -------------------------------------------------------------
 
 export async function accionCrearEmbarque(
-  token: Token,
+  tokens: TokensCedis,
   item: CrearEmbarqueInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => crearEmbarque(token, item))
+  return invocar('crearEmbarque', tokens, { ...item })
 }
 
 export async function accionActualizarEstadoEmbarque(
-  token: Token,
+  tokens: TokensCedis,
   id: string,
   estado: EstadoEmbarque,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoEmbarque(token, id, estado))
+  return invocar('actualizarEstadoEmbarque', tokens, { id, estado })
 }
 
-export async function accionEliminarEmbarque(token: Token, id: string): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarEmbarque(token, id))
+export async function accionEliminarEmbarque(
+  tokens: TokensCedis,
+  id: string,
+): Promise<ResultadoAccion> {
+  return invocar('eliminarEmbarque', tokens, { id })
 }
 
 // --- Recepciones -----------------------------------------------------------
 
 export async function accionCrearRecepcion(
-  token: Token,
+  tokens: TokensCedis,
   item: CrearRecepcionInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => crearRecepcion(token, item))
+  return invocar('crearRecepcion', tokens, { ...item })
 }
 
 export async function accionActualizarEstadoRecepcion(
-  token: Token,
+  tokens: TokensCedis,
   id: string,
   estado: EstadoRecepcion,
   anden?: string | null,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoRecepcion(token, id, estado, anden))
+  return invocar('actualizarEstadoRecepcion', tokens, { id, estado, anden: anden ?? null })
 }
 
-export async function accionEliminarRecepcion(token: Token, id: string): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarRecepcion(token, id))
+export async function accionEliminarRecepcion(
+  tokens: TokensCedis,
+  id: string,
+): Promise<ResultadoAccion> {
+  return invocar('eliminarRecepcion', tokens, { id })
 }
 
 // --- Surtido ---------------------------------------------------------------
 
 export async function accionCrearPedidoSurtido(
-  token: Token,
+  tokens: TokensCedis,
   item: CrearSurtidoInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => crearPedidoSurtido(token, item))
+  return invocar('crearPedidoSurtido', tokens, { ...item })
 }
 
 export async function accionActualizarEstadoSurtido(
-  token: Token,
+  tokens: TokensCedis,
   id: string,
   estado: EstadoSurtido,
   operador?: string | null,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoSurtido(token, id, estado, operador))
+  return invocar('actualizarEstadoSurtido', tokens, { id, estado, operador: operador ?? null })
 }
 
 export async function accionEliminarPedidoSurtido(
-  token: Token,
+  tokens: TokensCedis,
   id: string,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarPedidoSurtido(token, id))
+  return invocar('eliminarPedidoSurtido', tokens, { id })
 }
 
 // --- Etiquetado ------------------------------------------------------------
 
 export async function accionCrearLoteEtiquetado(
-  token: Token,
+  tokens: TokensCedis,
   item: CrearEtiquetadoInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => crearLoteEtiquetado(token, item))
+  return invocar('crearLoteEtiquetado', tokens, { ...item })
 }
 
 export async function accionActualizarEstadoEtiquetado(
-  token: Token,
+  tokens: TokensCedis,
   id: string,
   estado: EstadoEtiquetado,
   motivoRechazo?: string | null,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => actualizarEstadoEtiquetado(token, id, estado, motivoRechazo))
+  return invocar('actualizarEstadoEtiquetado', tokens, {
+    id,
+    estado,
+    motivo_rechazo: motivoRechazo ?? null,
+  })
 }
 
 export async function accionEliminarLoteEtiquetado(
-  token: Token,
+  tokens: TokensCedis,
   id: string,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarLoteEtiquetado(token, id))
+  return invocar('eliminarLoteEtiquetado', tokens, { id })
 }
 
 // --- Productividad ---------------------------------------------------------
 
 export async function accionRegistrarProductividad(
-  token: Token,
+  tokens: TokensCedis,
   input: RegistrarProductividadInput,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => registrarProductividad(token, input))
+  return invocar('registrarProductividad', tokens, { ...input })
 }
 
 export async function accionEliminarRegistroProductividad(
-  token: Token,
+  tokens: TokensCedis,
   id: string,
 ): Promise<ResultadoAccion> {
-  return ejecutar(() => eliminarRegistroProductividad(token, id))
+  return invocar('eliminarRegistroProductividad', tokens, { id })
 }

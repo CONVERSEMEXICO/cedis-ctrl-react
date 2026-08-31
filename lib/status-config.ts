@@ -1,6 +1,7 @@
 // Mapea estados de cada módulo a etiquetas en español y clases de color
 // para badges e indicadores visuales.
 
+import type { Role } from '@/lib/auth/roles'
 import type {
   EstadoEmbarque,
   EstadoEtiquetado,
@@ -262,4 +263,31 @@ export const MODULO_DOT_CLASS: Record<ModuloOperativo, string> = {
   etiquetado: 'bg-etiquetado',
   productividad: 'bg-productividad',
   incidencias: 'bg-incidencias',
+}
+
+/**
+ * Rol del usuario en el pie del sidebar.
+ *
+ * Sigue el mismo contrato `EstadoConfig` que el resto de los badges para poder
+ * renderizarse con <EstadoBadge />: las clases de color no se escriben a mano
+ * en los componentes. Los colores los fija el diseño —Administrador ámbar,
+ * Supervisor azul, Operador gris— y no se derivan de la paleta de módulos: el
+ * rol no es un módulo operativo.
+ */
+export const ROL_CONFIG: Record<Role, EstadoConfig> = {
+  'CEDIS.Administrador': {
+    label: 'Administrador',
+    dotClass: 'bg-amber-500',
+    badgeClass: 'bg-amber-500/15 text-amber-400',
+  },
+  'CEDIS.Supervisor': {
+    label: 'Supervisor',
+    dotClass: 'bg-blue-500',
+    badgeClass: 'bg-blue-500/15 text-blue-400',
+  },
+  'CEDIS.Operador': {
+    label: 'Operador',
+    dotClass: 'bg-muted-foreground',
+    badgeClass: 'bg-secondary text-secondary-foreground',
+  },
 }

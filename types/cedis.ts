@@ -5,6 +5,22 @@
 // nomenclatura snake_case (`hora_salida`, `motivo_rechazo`, `created_at`).
 // Mantenerlas idénticas evita una capa de mapeo entre la API y la UI.
 
+import type { Role } from '@/lib/auth/roles'
+
+/**
+ * Los app roles viven en lib/auth/roles.ts —de ahí los leen el hook y el guard
+ * del servidor— y se reexportan aquí para que el dominio se importe de un solo
+ * lugar.
+ */
+export type { Role }
+
+/** Usuario autenticado tal como lo consume la UI: identidad + rol efectivo. */
+export interface CedisUser {
+  name: string
+  email: string
+  role: Role | null
+}
+
 export type EstadoEmbarque =
   | 'programado'
   | 'cargando'

@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useOperacionCedis } from '@/hooks/use-operacion-cedis'
+import { usePermission } from '@/hooks/use-permission'
 import { accionEliminarRegistroProductividad } from '@/lib/actions'
 import { formatDecimal, formatNumero } from '@/lib/format'
 import { cumplimientoRegistro, cumpleMeta, unidadesPorHora } from '@/lib/metrics'
@@ -36,6 +37,7 @@ const CLASE_NUMERO = 'text-right font-mono tabular-nums'
 
 export function ProductividadTabla({ registros }: { registros: RegistroProductividad[] }) {
   const { ejecutar } = useOperacionCedis()
+  const puedeEliminar = usePermission('eliminar_registro')
   const [idEnCurso, setIdEnCurso] = useState<string | null>(null)
   const [aEliminar, setAEliminar] = useState<RegistroProductividad | null>(null)
 
@@ -45,7 +47,8 @@ export function ProductividadTabla({ registros }: { registros: RegistroProductiv
     setAEliminar(null)
     setIdEnCurso(registro.id)
     await ejecutar(
-      (token) => accionEliminarRegistroProductividad(token, registro.id),
+      'eliminar_registro',
+      (tokens) => accionEliminarRegistroProductividad(tokens, registro.id),
       'Registro eliminado',
     )
     setIdEnCurso(null)
@@ -65,9 +68,11 @@ export function ProductividadTabla({ registros }: { registros: RegistroProductiv
               <TableHead className="text-right">Meta</TableHead>
               <TableHead className="text-right">Unid./hora</TableHead>
               <TableHead>Cumplimiento</TableHead>
-              <TableHead className="w-10">
-                <span className="sr-only">Eliminar</span>
-              </TableHead>
+              {puedeEliminar && (
+                <TableHead className="w-10">
+                  <span className="sr-only">Eliminar</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -102,23 +107,28 @@ export function ProductividadTabla({ registros }: { registros: RegistroProductiv
                       {cumple ? 'Cumple meta' : 'Bajo meta'} {cumplimiento}%
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="destructive"
-                      size="icon-sm"
-                      disabled={ocupado}
-                      onClick={() => setAEliminar(registro)}
-                      aria-label="Eliminar registro de productividad"
-                    >
-                      <X />
-                    </Button>
-                  </TableCell>
+                  {puedeEliminar && (
+                    <TableCell>
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        disabled={ocupado}
+                        onClick={() => setAEliminar(registro)}
+                        aria-label="Eliminar registro de productividad"
+                      >
+                        <X />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               )
             })}
             {registros.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={puedeEliminar ? 9 : 8}
+                  className="py-12 text-center text-sm text-muted-foreground"
+                >
                   No hay turnos registrados.
                 </TableCell>
               </TableRow>

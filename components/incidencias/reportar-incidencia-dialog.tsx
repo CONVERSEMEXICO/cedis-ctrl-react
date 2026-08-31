@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { usePermission } from '@/hooks/use-permission'
+import { MENSAJE_SIN_PERMISO } from '@/lib/auth/permissions'
 import type { ModuloOperativo, Severidad, TipoIncidencia } from '@/types/cedis'
 
 const TIPOS: { value: TipoIncidencia; label: string }[] = [
@@ -65,6 +67,7 @@ export function ReportarIncidenciaDialog({
 }: {
   moduloInicial?: ModuloOperativo
 }) {
+  const puedeReportar = usePermission('reportar_incidencia')
   const [open, setOpen] = useState(false)
   const [modulo, setModulo] = useState<ModuloOperativo>(moduloInicial ?? MODULO_POR_DEFECTO)
 
@@ -75,11 +78,20 @@ export function ReportarIncidenciaDialog({
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // El guard se repite aquí y no solo en el render: si alguien invoca el
+    // handler a mano —desde la consola, o porque un refactor deja el botón
+    // visible— el toast es el mismo que devuelve el 403 del servidor.
+    if (!puedeReportar) {
+      toast.error(MENSAJE_SIN_PERMISO)
+      return
+    }
     toast.success('Incidencia reportada', {
       description: 'Se registró la incidencia y se notificó al responsable del módulo.',
     })
     setOpen(false)
   }
+
+  if (!puedeReportar) return null
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

@@ -12,8 +12,11 @@ import {
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { EstadoBadge } from '@/components/shared/estado-badge'
 import { Button } from '@/components/ui/button'
+import { useCedisRole } from '@/hooks/use-cedis-role'
 import { useFabricAuth } from '@/hooks/use-fabric-auth'
+import { ROL_CONFIG } from '@/lib/status-config'
 import { cn } from '@/lib/utils'
 
 export interface SidebarCounts {
@@ -99,6 +102,7 @@ function LiveClock() {
 export function SidebarNav({ counts }: { counts: SidebarCounts | null }) {
   const pathname = usePathname()
   const { account, logout } = useFabricAuth()
+  const { role } = useCedisRole()
 
   return (
     <aside className="flex h-full w-16 flex-col border-r border-sidebar-border bg-sidebar md:w-60">
@@ -151,13 +155,26 @@ export function SidebarNav({ counts }: { counts: SidebarCounts | null }) {
           Centro de distribución · Operación en vivo
         </p>
         {account && (
-          <div className="flex flex-col items-start gap-1">
-            <p
-              className="w-full truncate font-mono text-[11px] leading-tight text-sidebar-foreground"
-              title={account.usuario}
-            >
-              {account.nombre}
-            </p>
+          <div className="flex flex-col items-start gap-1.5">
+            <div className="flex w-full min-w-0 items-center gap-1.5">
+              <p
+                className="min-w-0 truncate font-mono text-[11px] leading-tight text-sidebar-foreground"
+                title={account.usuario}
+              >
+                {account.nombre}
+              </p>
+              {role && (
+                <>
+                  <span className="text-[11px] leading-none text-muted-foreground" aria-hidden>
+                    ·
+                  </span>
+                  <EstadoBadge
+                    config={ROL_CONFIG[role]}
+                    className="shrink-0 gap-1 px-1.5 py-0.5 text-[10px]"
+                  />
+                </>
+              )}
+            </div>
             <Button variant="ghost" size="xs" onClick={logout}>
               Cerrar sesión
             </Button>

@@ -5,10 +5,15 @@
 //      va la <PantallaLogin />.
 //   2. Los conteos del sidebar salen de los datos que ya cargó
 //      <ProveedorDatosCedis>, no de un fetch propio.
+//
+// El <BannerDemo /> va entre el topbar y el contenido —no dentro de <main>—
+// para que quede fijo mientras el contenido hace scroll, y se pinta solo cuando
+// no hay cuenta activa de Entra ID.
 
 import { Loader2 } from 'lucide-react'
 import { SidebarNav } from '@/components/layout/sidebar-nav'
 import { Topbar } from '@/components/layout/topbar'
+import { BannerDemo } from '@/components/auth/banner-demo'
 import { PantallaLogin } from '@/components/auth/pantalla-login'
 import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { useFabricAuth } from '@/hooks/use-fabric-auth'
@@ -36,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <SidebarNav counts={listo ? counts : null} />
         <div className="flex min-h-0 flex-1 flex-col">
           <Topbar />
+          <BannerDemo />
           <main className="flex-1 overflow-y-auto bg-background">
             {listo ? (
               children
