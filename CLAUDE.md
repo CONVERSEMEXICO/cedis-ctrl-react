@@ -38,14 +38,33 @@ Sin `CLIENT_ID`/`TENANT_ID` no se pide login: la app queda en modo demostración
 
 Tres archivos encadenados, y es la parte del código que hay que entender antes de tocar datos:
 
-- [lib/graphql.ts](lib/graphql.ts) — cliente `fetchGraphQL(query, variables, accessToken)` genérico contra la GraphQL API de **Microsoft Fabric SQL Database**. Lee `NEXT_PUBLIC_FABRIC_GRAPHQL_ENDPOINT` de env; sin token o sin endpoint lanza `GraphQLRequestError` de inmediato, y marca `sesionExpirada` cuando Fabric responde 401. Usa `cache: 'no-store'`.
+- [lib/graphql.ts](lib/graphql.ts) — cliente genérico contra la GraphQL API de **Microsoft Fabric SQL Database**. Lee `NEXT_PUBLIC_FABRIC_GRAPHQL_ENDPOINT` de env; sin token o sin endpoint lanza `GraphQLRequestError` de inmediato, y marca `sesionExpirada` cuando Fabric responde 401. Usa `cache: 'no-store'`. Dos funciones: `fetchGraphQL()` lanza ante cualquier error, y `ejecutarGraphQL()` devuelve la respuesta cruda para tolerar **errores parciales** (lo que necesita la consulta agrupada). Ver "Límite de tasa" abajo.
 - [lib/queries.ts](lib/queries.ts) — una función por operación. Los cinco módulos con tabla publicada (embarques, recepciones, surtido, etiquetado, productividad) tienen su documento GraphQL real; **incidencias sigue en stub `# TODO`** porque esa tabla todavía no está expuesta en la API. Convenciones del esquema de Fabric que hay que respetar tal cual: toda query devuelve un Connection (`{ items, endCursor, hasNextPage }`), la pluralización la decide Fabric (`surtidos`, `etiquetados`, `productividads`) aunque los `*Input` conserven el nombre de la tabla, y **toda escritura va por stored procedure** (`executeCrear*`, `executeActualizarEstado*`, `executeRegistrarProductividad`), nunca por las mutations `create`/`update` genéricas: el input que Fabric genera por tabla expone `created_at` y `updated_at`, y esas columnas las tiene que sellar el server. Los SP viven en [sql/](sql/) — ver la nota "Auditoría" en [sql/README.md](sql/README.md).
-- [lib/data.ts](lib/data.ts) — envuelve cada query en `conRespaldo()`, que hace `try/catch` y devuelve los arreglos de [lib/seed-data.ts](lib/seed-data.ts) cuando la API falla (incluido el caso "no hay token"). `cargarDatosCedis(token)` trae los seis conjuntos en paralelo y devuelve `{ datos, offline, sesionExpirada }`, con una bandera de offline **por conjunto**.
+- [lib/data.ts](lib/data.ts) — `cargarDatosCedis(token)` devuelve `{ datos, offline, sesionExpirada, limiteExcedido }`, con una bandera de offline **por conjunto**, y usa los arreglos de [lib/seed-data.ts](lib/seed-data.ts) como respaldo. Los cinco conjuntos con tabla publicada viajan en **una sola petición** (`getDatosOperativos`); incidencias no sale a la red. Ver "Límite de tasa".
 - [lib/actions.ts](lib/actions.ts) — la única vía de escritura. **No hablan con Fabric**: hacen `POST /api/cedis/<operacion>` al Route Handler, que es donde se verifica el rol (ver "Autorización" abajo). Reciben `TokensCedis` como primer argumento y devuelven `ResultadoAccion` (`{ ok }` / `{ ok: false, error, sesionExpirada }`) en vez de lanzar.
 
 Quien llama a `lib/data.ts` es **solo** [`<ProveedorDatosCedis>`](components/providers/cedis-data-provider.tsx): pide el token, carga los seis conjuntos y los expone con `useDatosCedis()` (`datos`, `offline`, `listo`, `cargando`, `refrescar`). Las páginas leen de ese hook — nunca de `lib/queries.ts` ni de `lib/seed-data.ts` — y usan `offline.<conjunto>` para pintar `<BannerOffline />`. `refrescar()` es lo que sustituye al `revalidatePath` de las server actions: lo llaman el botón "Actualizar" del topbar y `useOperacionCedis` después de cada escritura.
 
 Las entidades de `types/cedis.ts` espejean columna por columna las tablas de Fabric, snake_case incluido (`hora_salida`, `motivo_rechazo`, `created_at`): no hay capa de mapeo, así que renombrar un campo del esquema es renombrarlo aquí.
+
+### Límite de tasa: Fabric responde 429
+
+Fabric limita la tasa de peticiones y responde `429 RequestBlocked` con una ventana (`"blocked by the upstream service until: …"`). En agosto de 2026 el panel la excedía en operación normal, y la causa era estructural, no de volumen:
+
+| | Antes | Ahora |
+|---|---|---|
+| Carga del panel | 6 peticiones | **1** |
+| Escritura (mutación + recarga) | 7 peticiones | **2** |
+
+Tres cambios, y conviene no deshacerlos por accidente:
+
+1. **Consulta agrupada.** `getDatosOperativos()` pide los cinco conjuntos en un solo documento — GraphQL admite varios campos raíz y Fabric los resuelve juntos. Tolera fallos parciales: la tabla que falla llega en `null` y las otras siguen siendo válidas, que es lo que preserva la bandera de offline por conjunto.
+2. **Incidencias no sale a la red.** Su tabla no está publicada, así que `getIncidencias()` lanza en local. Antes mandaba un documento vacío que Fabric rechazaba siempre: una de las seis peticiones de cada carga se gastaba en un error garantizado y contaba igual para el límite.
+3. **Deduplicación de recargas.** `refrescar()` en [`<ProveedorDatosCedis>`](components/providers/cedis-data-provider.tsx) se cuelga de la carga en vuelo si ya hay una, en vez de abrir otra.
+
+**Cortacircuitos.** Al recibir un 429, `lib/graphql.ts` guarda hasta cuándo dura el bloqueo (`Retry-After`, o la fecha del mensaje, o 60 s por defecto; recortado a 10 min como máximo) y **corta sin tocar la red** mientras esa ventana siga abierta. No es solo ahorro: seguir pegándole a Fabric dentro de la ventana alarga el castigo. La ventana se cierra sola con la primera respuesta buena, y el botón "Actualizar" se deshabilita mientras tanto (`limitado` en `useDatosCedis()`).
+
+**Al agregar una lectura**, agrégala como campo raíz de la consulta agrupada, no como una petición nueva.
 
 ### Autorización: app roles de Entra ID
 

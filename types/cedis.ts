@@ -154,5 +154,11 @@ export interface RegistroProductividad {
 /** Contrato uniforme de las operaciones de escritura de lib/actions.ts. */
 export type ResultadoAccion =
   | { ok: true }
-  /** `sesionExpirada` distingue el 401 de Fabric: hay que volver a entrar. */
-  | { ok: false; error: string; sesionExpirada: boolean }
+  | {
+      ok: false
+      error: string
+      /** Distingue el 401 de Fabric: hay que volver a entrar. */
+      sesionExpirada: boolean
+      /** Distingue el 429: no es un error del usuario, hay que esperar. */
+      limiteExcedido?: boolean
+    }

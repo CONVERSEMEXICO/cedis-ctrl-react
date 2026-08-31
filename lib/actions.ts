@@ -18,7 +18,7 @@
 
 import { MENSAJE_SIN_PERMISO } from '@/lib/auth/permissions'
 import type { TokensCedis } from '@/lib/auth/tokens'
-import { MENSAJE_SESION_EXPIRADA } from '@/lib/graphql'
+import { MENSAJE_SESION_EXPIRADA, mensajeLimiteExcedido } from '@/lib/graphql'
 import type {
   CrearEmbarqueInput,
   CrearEtiquetadoInput,
@@ -95,6 +95,14 @@ async function invocar(
   }
   if (respuesta.status === 401) {
     return { ok: false, error: datos.mensaje ?? MENSAJE_SESION_EXPIRADA, sesionExpirada: true }
+  }
+  if (respuesta.status === 429) {
+    return {
+      ok: false,
+      error: datos.mensaje ?? mensajeLimiteExcedido(),
+      sesionExpirada: false,
+      limiteExcedido: true,
+    }
   }
 
   console.error(`[cedis] ${operacion} falló (${respuesta.status}):`, datos)

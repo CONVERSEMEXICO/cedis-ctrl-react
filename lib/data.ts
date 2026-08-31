@@ -5,16 +5,16 @@
 // El token lo obtiene el navegador con MSAL, así que cada carga lo recibe como
 // argumento; quien lo pide es <ProveedorDatosCedis>
 // (components/providers/cedis-data-provider.tsx), el único que llama aquí.
+//
+// Los cinco conjuntos con tabla publicada viajan en **una sola petición**
+// (getDatosOperativos). Antes eran cinco en paralelo más el stub de
+// incidencias: seis por carga, y como cada escritura dispara una recarga, la
+// operación normal del CEDIS excedía el límite de tasa de Fabric y la API
+// empezaba a responder 429. Incidencias ya no sale a la red: su tabla no está
+// publicada, así que el respaldo seed se resuelve en local.
 
-import { esSesionExpirada } from '@/lib/graphql'
-import {
-  getEmbarques,
-  getIncidencias,
-  getLotesEtiquetado,
-  getPedidosSurtido,
-  getRecepciones,
-  getRegistrosProductividad,
-} from '@/lib/queries'
+import { esLimiteExcedido, esSesionExpirada } from '@/lib/graphql'
+import { getDatosOperativos } from '@/lib/queries'
 import {
   embarquesSeed,
   incidenciasSeed,
@@ -42,58 +42,6 @@ export interface ResultadoDatos<T> {
   sesionExpirada: boolean
 }
 
-/**
- * Corre la carga de un conjunto y, si falla, devuelve el respaldo seed.
- *
- * El error se registra en la consola del navegador con el nombre del conjunto:
- * sin eso, "Modo offline" es indistinguible entre no hay token, la API no
- * responde y Fabric devolvió un error de esquema.
- */
-async function conRespaldo<T>(
-  conjunto: keyof DatosCedis,
-  fn: () => Promise<T>,
-  respaldo: T,
-): Promise<ResultadoDatos<T>> {
-  try {
-    return { datos: await fn(), offline: false, sesionExpirada: false }
-  } catch (error) {
-    console.error(`[cedis] ${conjunto}: cayó al respaldo seed —`, error)
-    return { datos: respaldo, offline: true, sesionExpirada: esSesionExpirada(error) }
-  }
-}
-
-export async function cargarEmbarques(token: Token): Promise<ResultadoDatos<Embarque[]>> {
-  return conRespaldo('embarques', () => getEmbarques(token), embarquesSeed)
-}
-
-export async function cargarRecepciones(token: Token): Promise<ResultadoDatos<Recepcion[]>> {
-  return conRespaldo('recepciones', () => getRecepciones(token), recepcionesSeed)
-}
-
-export async function cargarPedidosSurtido(token: Token): Promise<ResultadoDatos<PedidoSurtido[]>> {
-  return conRespaldo('pedidosSurtido', () => getPedidosSurtido(token), pedidosSurtidoSeed)
-}
-
-export async function cargarLotesEtiquetado(
-  token: Token,
-): Promise<ResultadoDatos<LoteEtiquetado[]>> {
-  return conRespaldo('lotesEtiquetado', () => getLotesEtiquetado(token), lotesEtiquetadoSeed)
-}
-
-export async function cargarIncidencias(token: Token): Promise<ResultadoDatos<Incidencia[]>> {
-  return conRespaldo('incidencias', () => getIncidencias(token), incidenciasSeed)
-}
-
-export async function cargarRegistrosProductividad(
-  token: Token,
-): Promise<ResultadoDatos<RegistroProductividad[]>> {
-  return conRespaldo(
-    'productividad',
-    () => getRegistrosProductividad(token),
-    registrosProductividadSeed,
-  )
-}
-
 /** Los seis conjuntos que consume el panel. */
 export interface DatosCedis {
   embarques: Embarque[]
@@ -110,8 +58,10 @@ export type OfflinePorConjunto = Record<keyof DatosCedis, boolean>
 export interface ResultadoDatosCedis {
   datos: DatosCedis
   offline: OfflinePorConjunto
-  /** true si alguna de las seis cargas falló por sesión vencida. */
+  /** true si la carga falló por sesión vencida. */
   sesionExpirada: boolean
+  /** true si Fabric respondió 429: hay que dejar de pedir por un rato. */
+  limiteExcedido: boolean
 }
 
 /** Estado inicial: sin datos todavía, todo marcado como no cargado. */
@@ -133,16 +83,62 @@ export const OFFLINE_INICIAL: OfflinePorConjunto = {
   productividad: false,
 }
 
+/** Lo que se ve cuando no hay API: la operación de ejemplo, completa. */
+const SEED: DatosCedis = {
+  embarques: embarquesSeed,
+  recepciones: recepcionesSeed,
+  pedidosSurtido: pedidosSurtidoSeed,
+  lotesEtiquetado: lotesEtiquetadoSeed,
+  incidencias: incidenciasSeed,
+  productividad: registrosProductividadSeed,
+}
+
+/**
+ * Resuelve un conjunto: lo que trajo Fabric, o el seed si vino en null.
+ *
+ * El null por conjunto es lo que permite que un fallo parcial —una tabla que
+ * falla mientras las otras responden— no tire la carga entera.
+ */
+function conRespaldo<K extends keyof DatosCedis>(
+  conjunto: K,
+  recibido: DatosCedis[K] | null,
+): { datos: DatosCedis[K]; offline: boolean } {
+  if (recibido) return { datos: recibido, offline: false }
+  console.error(`[cedis] ${conjunto}: cayó al respaldo seed`)
+  return { datos: SEED[conjunto], offline: true }
+}
+
+/** Todo el panel en seed, con el motivo del fallo ya clasificado. */
+function todoOffline(error: unknown): ResultadoDatosCedis {
+  console.error('[cedis] la carga completa cayó al respaldo seed —', error)
+  return {
+    datos: SEED,
+    offline: {
+      embarques: true,
+      recepciones: true,
+      pedidosSurtido: true,
+      lotesEtiquetado: true,
+      incidencias: true,
+      productividad: true,
+    },
+    sesionExpirada: esSesionExpirada(error),
+    limiteExcedido: esLimiteExcedido(error),
+  }
+}
+
 export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedis> {
-  const [embarques, recepciones, pedidosSurtido, lotesEtiquetado, incidencias, productividad] =
-    await Promise.all([
-      cargarEmbarques(token),
-      cargarRecepciones(token),
-      cargarPedidosSurtido(token),
-      cargarLotesEtiquetado(token),
-      cargarIncidencias(token),
-      cargarRegistrosProductividad(token),
-    ])
+  let operativos
+  try {
+    operativos = await getDatosOperativos(token)
+  } catch (error) {
+    return todoOffline(error)
+  }
+
+  const embarques = conRespaldo('embarques', operativos.embarques)
+  const recepciones = conRespaldo('recepciones', operativos.recepciones)
+  const pedidosSurtido = conRespaldo('pedidosSurtido', operativos.pedidosSurtido)
+  const lotesEtiquetado = conRespaldo('lotesEtiquetado', operativos.lotesEtiquetado)
+  const productividad = conRespaldo('productividad', operativos.productividad)
 
   return {
     datos: {
@@ -150,7 +146,9 @@ export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedi
       recepciones: recepciones.datos,
       pedidosSurtido: pedidosSurtido.datos,
       lotesEtiquetado: lotesEtiquetado.datos,
-      incidencias: incidencias.datos,
+      // Sin tabla publicada en la API, incidencias siempre es seed y no gasta
+      // una petición en averiguarlo. Ver getIncidencias en lib/queries.ts.
+      incidencias: SEED.incidencias,
       productividad: productividad.datos,
     },
     offline: {
@@ -158,16 +156,10 @@ export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedi
       recepciones: recepciones.offline,
       pedidosSurtido: pedidosSurtido.offline,
       lotesEtiquetado: lotesEtiquetado.offline,
-      incidencias: incidencias.offline,
+      incidencias: true,
       productividad: productividad.offline,
     },
-    sesionExpirada: [
-      embarques,
-      recepciones,
-      pedidosSurtido,
-      lotesEtiquetado,
-      incidencias,
-      productividad,
-    ].some((resultado) => resultado.sesionExpirada),
+    sesionExpirada: false,
+    limiteExcedido: false,
   }
 }

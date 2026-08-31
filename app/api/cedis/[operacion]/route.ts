@@ -20,7 +20,12 @@ import {
   requirePermission,
   respuestaSinPermiso,
 } from '@/lib/auth/requirePermission'
-import { esSesionExpirada, MENSAJE_SESION_EXPIRADA } from '@/lib/graphql'
+import {
+  esLimiteExcedido,
+  esSesionExpirada,
+  GraphQLRequestError,
+  MENSAJE_SESION_EXPIRADA,
+} from '@/lib/graphql'
 import {
   actualizarEstadoEmbarque,
   actualizarEstadoEtiquetado,
@@ -267,6 +272,18 @@ export async function POST(
       return Response.json(
         { error: 'unauthorized', mensaje: MENSAJE_SESION_EXPIRADA },
         { status: 401 },
+      )
+    }
+    // El 429 se reenvía como 429, con Retry-After, para que el cliente sepa
+    // que no es un error suyo y no lo reintente de inmediato.
+    if (esLimiteExcedido(error)) {
+      const reintentarEn = (error as GraphQLRequestError).reintentarEn
+      const segundos = reintentarEn
+        ? Math.max(1, Math.ceil((reintentarEn.getTime() - Date.now()) / 1000))
+        : 60
+      return Response.json(
+        { error: 'rate_limited', mensaje: (error as Error).message },
+        { status: 429, headers: { 'Retry-After': String(segundos) } },
       )
     }
     console.error(`[cedis] ${nombre} falló contra Fabric —`, error)

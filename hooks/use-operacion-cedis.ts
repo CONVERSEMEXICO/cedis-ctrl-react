@@ -66,10 +66,14 @@ export function useOperacionCedis() {
           await logout()
           return false
         }
-        // El 403 del servidor ya trae su propio mensaje: se muestra tal cual,
-        // sin envolverlo en "no se pudo guardar", que sugeriría un fallo de red.
+        // El 403 y el 429 ya traen su propio mensaje: se muestran tal cual, sin
+        // envolverlos en "no se pudo guardar", que sugeriría un fallo de red.
         if (resultado.error === MENSAJE_SIN_PERMISO) {
           toast.error(MENSAJE_SIN_PERMISO)
+          return false
+        }
+        if (resultado.limiteExcedido) {
+          toast.error(resultado.error)
           return false
         }
         toast.error(ERROR_GUARDAR, { description: resultado.error })

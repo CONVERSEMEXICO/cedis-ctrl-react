@@ -16,7 +16,7 @@
 //     (`executeCrear*`, ver sql/08_sp_altas.sql) para que `id`, `created_at` y
 //     `updated_at` los ponga el server y no se puedan escribir desde la API.
 
-import { fetchGraphQL, GraphQLRequestError } from '@/lib/graphql'
+import { ejecutarGraphQL, fetchGraphQL, GraphQLRequestError } from '@/lib/graphql'
 import type {
   Embarque,
   EstadoEmbarque,
@@ -77,6 +77,92 @@ function filtroEstado(estado?: string) {
 }
 
 const ORDEN_RECIENTE = { created_at: 'DESC' }
+
+// ---------------------------------------------------------------------------
+// Carga agrupada del panel
+// ---------------------------------------------------------------------------
+
+/** Los cinco conjuntos con tabla publicada, tal como los devuelve Fabric. */
+export interface DatosOperativos {
+  embarques: Embarque[] | null
+  recepciones: Recepcion[] | null
+  pedidosSurtido: PedidoSurtido[] | null
+  lotesEtiquetado: LoteEtiquetado[] | null
+  productividad: RegistroProductividad[] | null
+}
+
+interface RespuestaDatosOperativos {
+  embarques: Conexion<Embarque> | null
+  recepciones: Conexion<Recepcion> | null
+  surtidos: Conexion<PedidoSurtido> | null
+  etiquetados: Conexion<LoteEtiquetado> | null
+  productividads: Conexion<RegistroProductividadApi> | null
+}
+
+/**
+ * Trae los cinco conjuntos en **una sola petición**.
+ *
+ * GraphQL permite varios campos raíz en un documento, y Fabric los resuelve
+ * juntos. Antes esto eran cinco peticiones en paralelo (seis con el stub de
+ * incidencias) por cada carga del panel, y como cada escritura dispara una
+ * recarga, un turno de trabajo normal se comía el límite de tasa.
+ *
+ * El `orderBy` va inline y sin comillas porque `DESC` es un enum del esquema;
+ * como variable viajaría serializado a string, que es lo que hacen las queries
+ * individuales de abajo. El `filter: null` explícito reproduce lo que esas
+ * mandaban: sin filtro de estado, todos los registros.
+ *
+ * Tolera fallos parciales: si una tabla falla, su campo llega en null y las
+ * demás siguen siendo válidas. Quien llama decide qué hacer con cada null
+ * (lib/data.ts marca ese conjunto como offline y usa el seed).
+ */
+export async function getDatosOperativos(token: Token): Promise<DatosOperativos> {
+  const QUERY = /* GraphQL */ `
+    query GetDatosCedis {
+      embarques(first: ${LIMITE}, filter: null, orderBy: { created_at: DESC }) {
+        items { ${CAMPOS_EMBARQUE} }
+      }
+      recepciones(first: ${LIMITE}, filter: null, orderBy: { created_at: DESC }) {
+        items { ${CAMPOS_RECEPCION} }
+      }
+      surtidos(first: ${LIMITE}, filter: null, orderBy: { created_at: DESC }) {
+        items { ${CAMPOS_SURTIDO} }
+      }
+      etiquetados(first: ${LIMITE}, filter: null, orderBy: { created_at: DESC }) {
+        items { ${CAMPOS_ETIQUETADO} }
+      }
+      productividads(first: ${LIMITE}, orderBy: { created_at: DESC }) {
+        items { ${CAMPOS_PRODUCTIVIDAD} }
+      }
+    }
+  `
+
+  const respuesta = await ejecutarGraphQL<RespuestaDatosOperativos>(QUERY, undefined, token)
+
+  if (respuesta.errors?.length) {
+    // No se lanza: puede haber datos parciales. Queda el rastro en consola con
+    // el `path`, que es lo que dice qué tabla falló.
+    console.error('[cedis] la carga agrupada trajo errores parciales —', respuesta.errors)
+  }
+
+  const datos = respuesta.data
+  if (!datos) {
+    throw new GraphQLRequestError(
+      respuesta.errors?.map((e) => e.message).join('; ') ??
+        'La respuesta de la API no contiene datos.',
+      200,
+      respuesta.errors,
+    )
+  }
+
+  return {
+    embarques: datos.embarques?.items ?? null,
+    recepciones: datos.recepciones?.items ?? null,
+    pedidosSurtido: datos.surtidos?.items ?? null,
+    lotesEtiquetado: datos.etiquetados?.items ?? null,
+    productividad: datos.productividads?.items.map(aRegistroProductividad) ?? null,
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Embarques
@@ -551,12 +637,17 @@ export async function eliminarRegistroProductividad(token: Token, id: string): P
 // `incidencias` todavía no está publicada en la API for GraphQL, así que estas
 // operaciones siguen siendo stubs: fallan y lib/data.ts cae a los datos seed.
 
-export async function getIncidencias(token: Token): Promise<Incidencia[]> {
-  const QUERY = /* GraphQL */ `
-    # TODO: completar query cuando la tabla incidencias se exponga en la API
-  `
-  return fetchGraphQL<{ incidencias: Conexion<Incidencia> }>(QUERY, undefined, token).then(
-    (d) => d.incidencias.items,
+/**
+ * Mientras la tabla no exista en la API, esto falla **sin salir a la red**.
+ *
+ * Antes mandaba un documento vacío que Fabric rechazaba siempre: una de las
+ * seis peticiones de cada carga se gastaba en un error garantizado, y contaba
+ * igual para el límite de tasa. El respaldo seed de lib/data.ts es el mismo,
+ * pero ahora sale gratis.
+ */
+export async function getIncidencias(_token: Token): Promise<Incidencia[]> {
+  throw new GraphQLRequestError(
+    'La tabla incidencias todavía no está publicada en la GraphQL API de Fabric.',
   )
 }
 
