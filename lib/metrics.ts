@@ -206,3 +206,47 @@ export function metricasProductividad(
     turnosBajoMeta: registros.filter((r) => !cumpleMeta(r)).length,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Productividad: alcance por rol
+// ---------------------------------------------------------------------------
+
+/**
+ * Normaliza un nombre para comparar operadores: sin acentos, sin dobles
+ * espacios y en minúsculas.
+ *
+ * Hace falta porque el nombre del operador se captura a mano en el alta del
+ * turno y el del usuario lo publica Entra ID: "Ana Cruz" y "ana cruz" son la
+ * misma persona, y "Ramón" capturado sin acento también.
+ */
+function normalizarNombre(nombre: string): string {
+  return nombre
+    .normalize('NFD')
+    // Marcas diacríticas combinantes (U+0300–U+036F) que dejó el NFD.
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+}
+
+export function esMismoOperador(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false
+  return normalizarNombre(a) === normalizarNombre(b)
+}
+
+/**
+ * Registros de productividad que le corresponde ver a un usuario.
+ *
+ * Con `ver_productividad_todos` se devuelven todos; sin ese permiso —el caso
+ * del Operador— solo los turnos capturados a su nombre. Vive aquí y no en la
+ * página para que la tabla y la gráfica partan del mismo arreglo: filtrar solo
+ * una de las dos dejaría el nombre de los demás a la vista en la otra.
+ */
+export function productividadVisible(
+  registros: RegistroProductividad[],
+  verTodos: boolean,
+  nombreUsuario: string | null,
+): RegistroProductividad[] {
+  if (verTodos) return registros
+  return registros.filter((registro) => esMismoOperador(registro.operador, nombreUsuario))
+}

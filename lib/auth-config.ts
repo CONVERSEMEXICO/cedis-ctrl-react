@@ -7,8 +7,16 @@
 
 import type { Configuration } from '@azure/msal-browser'
 
-const CLIENT_ID = process.env.NEXT_PUBLIC_ENTRA_CLIENT_ID ?? ''
-const TENANT_ID = process.env.NEXT_PUBLIC_ENTRA_TENANT_ID ?? ''
+// Se exportan porque no solo las consume MSAL en el navegador: el guard del
+// servidor (lib/auth/entra-token.ts) valida `aud`, `iss` y `tid` del ID token
+// contra estos mismos valores. Al llevar prefijo NEXT_PUBLIC_ están
+// disponibles en las dos orillas, y no son secretos: el clientId de una SPA es
+// público por diseño.
+export const ENTRA_CLIENT_ID = process.env.NEXT_PUBLIC_ENTRA_CLIENT_ID ?? ''
+export const ENTRA_TENANT_ID = process.env.NEXT_PUBLIC_ENTRA_TENANT_ID ?? ''
+
+const CLIENT_ID = ENTRA_CLIENT_ID
+const TENANT_ID = ENTRA_TENANT_ID
 
 /**
  * Sin clientId ni tenantId no hay login posible: la app arranca en modo

@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useOperacionCedis } from '@/hooks/use-operacion-cedis'
+import { usePermission } from '@/hooks/use-permission'
 import { accionRegistrarProductividad } from '@/lib/actions'
 import { AREAS, TURNOS } from '@/lib/status-config'
 import type { Turno } from '@/types/cedis'
@@ -50,6 +51,9 @@ function nuevoId(): string {
 
 export function RegistrarTurnoDialog() {
   const { ejecutar } = useOperacionCedis()
+  // Igual que en el alta de módulos, el permiso se verifica en el componente:
+  // así lo cubren de una vez el topbar y el encabezado de la página.
+  const puedeRegistrar = usePermission('registrar_turno_productividad')
   const [abierto, setAbierto] = useState(false)
   const [valores, setValores] = useState(VALORES_INICIALES)
   const [enviando, setEnviando] = useState(false)
@@ -64,8 +68,9 @@ export function RegistrarTurnoDialog() {
 
     setEnviando(true)
     const creado = await ejecutar(
-      (token) =>
-        accionRegistrarProductividad(token, {
+      'registrar_turno_productividad',
+      (tokens) =>
+        accionRegistrarProductividad(tokens, {
           id: nuevoId(),
           operador: valores.operador.trim(),
           area: valores.area,
@@ -83,6 +88,8 @@ export function RegistrarTurnoDialog() {
     setValores(VALORES_INICIALES)
     setAbierto(false)
   }
+
+  if (!puedeRegistrar) return null
 
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>

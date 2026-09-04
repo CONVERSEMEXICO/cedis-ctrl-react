@@ -2,6 +2,7 @@
 // Vive aparte para que el diálogo de alta y la vista no se importen en círculo.
 
 import type { ReactNode } from 'react'
+import type { TokensCedis } from '@/lib/auth/tokens'
 import type { EstadoConfig, Opcion } from '@/lib/status-config'
 import type { ResultadoAccion } from '@/types/cedis'
 
@@ -44,7 +45,7 @@ export interface ConfigCreacion {
   /** Campo que hace las veces de folio: 'folio' | 'pedido' | 'lote'. */
   campoFolio: string
   campos: CampoCreacion[]
-  crear: (token: string | null, valores: Record<string, string>) => Promise<ResultadoAccion>
+  crear: (tokens: TokensCedis, valores: Record<string, string>) => Promise<ResultadoAccion>
 }
 
 export interface ConfigModulo<T extends RegistroBase> extends ConfigCreacion {
@@ -54,12 +55,12 @@ export interface ConfigModulo<T extends RegistroBase> extends ConfigCreacion {
   estadoConfig: Record<string, EstadoConfig>
   columnas: ColumnaModulo<T>[]
   cambiarEstado: (
-    token: string | null,
+    tokens: TokensCedis,
     registro: T,
     estado: string,
     motivoRechazo?: string,
   ) => Promise<ResultadoAccion>
-  eliminar: (token: string | null, id: string) => Promise<ResultadoAccion>
+  eliminar: (tokens: TokensCedis, id: string) => Promise<ResultadoAccion>
   /** Estado que exige capturar un motivo antes de aplicarse ('rechazado'). */
   estadoQuePideMotivo?: string
 }

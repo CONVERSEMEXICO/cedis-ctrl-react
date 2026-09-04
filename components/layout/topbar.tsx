@@ -9,6 +9,7 @@ import { CrearRegistroDialog } from '@/components/modulos/crear-registro-dialog'
 import { RegistrarTurnoDialog } from '@/components/productividad/registrar-turno-dialog'
 import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { Button } from '@/components/ui/button'
+import { mensajeLimiteExcedido } from '@/lib/graphql'
 import { cn } from '@/lib/utils'
 import type { ModuloOperativo } from '@/types/cedis'
 
@@ -49,7 +50,7 @@ function useFechaLarga() {
 
 export function Topbar() {
   const pathname = usePathname()
-  const { cargando, refrescar } = useDatosCedis()
+  const { cargando, limitado, refrescar } = useDatosCedis()
   const fecha = useFechaLarga()
   const titulo = TITULOS[pathname] ?? 'CEDIS ·CTRL'
   const creacion = CREACION_POR_RUTA[pathname]
@@ -64,7 +65,15 @@ export function Topbar() {
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => void refrescar()} disabled={cargando}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void refrescar()}
+          disabled={cargando || limitado}
+          // Con la ventana de bloqueo abierta el botón no sirve de nada: Fabric
+          // sigue rechazando y cada intento alarga el castigo.
+          title={limitado ? mensajeLimiteExcedido() : undefined}
+        >
           <RefreshCw className={cn(cargando && 'animate-spin')} data-icon="inline-start" />
           <span className="hidden sm:inline">Actualizar</span>
         </Button>

@@ -115,8 +115,8 @@ export const CONFIG_EMBARQUES: ConfigModulo<Embarque> = {
       valorInicial: 'programado',
     },
   ],
-  crear: (token, v) =>
-    accionCrearEmbarque(token, {
+  crear: (tokens, v) =>
+    accionCrearEmbarque(tokens, {
       folio: v.folio,
       destino: v.destino,
       transportista: v.transportista,
@@ -124,9 +124,9 @@ export const CONFIG_EMBARQUES: ConfigModulo<Embarque> = {
       hora_salida: aTexto(v.hora_salida),
       estado: (v.estado || 'programado') as EstadoEmbarque,
     }),
-  cambiarEstado: (token, registro, estado) =>
-    accionActualizarEstadoEmbarque(token, registro.id, estado as EstadoEmbarque),
-  eliminar: (token, id) => accionEliminarEmbarque(token, id),
+  cambiarEstado: (tokens, registro, estado) =>
+    accionActualizarEstadoEmbarque(tokens, registro.id, estado as EstadoEmbarque),
+  eliminar: (tokens, id) => accionEliminarEmbarque(tokens, id),
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +182,8 @@ export const CONFIG_RECEPCIONES: ConfigModulo<Recepcion> = {
       valorInicial: 'programada',
     },
   ],
-  crear: (token, v) =>
-    accionCrearRecepcion(token, {
+  crear: (tokens, v) =>
+    accionCrearRecepcion(tokens, {
       folio: v.folio,
       proveedor: v.proveedor,
       anden: aTexto(v.anden),
@@ -192,9 +192,9 @@ export const CONFIG_RECEPCIONES: ConfigModulo<Recepcion> = {
       estado: (v.estado || 'programada') as EstadoRecepcion,
     }),
   // El SP conserva el andén actual cuando llega null, así que se reenvía.
-  cambiarEstado: (token, registro, estado) =>
-    accionActualizarEstadoRecepcion(token, registro.id, estado as EstadoRecepcion, registro.anden),
-  eliminar: (token, id) => accionEliminarRecepcion(token, id),
+  cambiarEstado: (tokens, registro, estado) =>
+    accionActualizarEstadoRecepcion(tokens, registro.id, estado as EstadoRecepcion, registro.anden),
+  eliminar: (tokens, id) => accionEliminarRecepcion(tokens, id),
 }
 
 // ---------------------------------------------------------------------------
@@ -256,8 +256,8 @@ export const CONFIG_SURTIDO: ConfigModulo<PedidoSurtido> = {
       valorInicial: 'pendiente',
     },
   ],
-  crear: (token, v) =>
-    accionCrearPedidoSurtido(token, {
+  crear: (tokens, v) =>
+    accionCrearPedidoSurtido(tokens, {
       pedido: v.pedido,
       cliente: v.cliente,
       lineas: aNumero(v.lineas),
@@ -266,9 +266,9 @@ export const CONFIG_SURTIDO: ConfigModulo<PedidoSurtido> = {
       estado: (v.estado || 'pendiente') as EstadoSurtido,
     }),
   // Sin operador el SP rechaza el paso a 'surtiendo'; se reenvía el asignado.
-  cambiarEstado: (token, registro, estado) =>
-    accionActualizarEstadoSurtido(token, registro.id, estado as EstadoSurtido, registro.operador),
-  eliminar: (token, id) => accionEliminarPedidoSurtido(token, id),
+  cambiarEstado: (tokens, registro, estado) =>
+    accionActualizarEstadoSurtido(tokens, registro.id, estado as EstadoSurtido, registro.operador),
+  eliminar: (tokens, id) => accionEliminarPedidoSurtido(tokens, id),
 }
 
 // ---------------------------------------------------------------------------
@@ -328,17 +328,17 @@ export const CONFIG_ETIQUETADO: ConfigModulo<LoteEtiquetado> = {
       valorInicial: 'pendiente',
     },
   ],
-  crear: (token, v) =>
-    accionCrearLoteEtiquetado(token, {
+  crear: (tokens, v) =>
+    accionCrearLoteEtiquetado(tokens, {
       lote: v.lote,
       producto: v.producto,
       unidades: aNumero(v.unidades),
       operador: aTexto(v.operador),
       estado: (v.estado || 'pendiente') as EstadoEtiquetado,
     }),
-  cambiarEstado: (token, registro, estado, motivoRechazo) =>
-    accionActualizarEstadoEtiquetado(token, registro.id, estado as EstadoEtiquetado, motivoRechazo),
-  eliminar: (token, id) => accionEliminarLoteEtiquetado(token, id),
+  cambiarEstado: (tokens, registro, estado, motivoRechazo) =>
+    accionActualizarEstadoEtiquetado(tokens, registro.id, estado as EstadoEtiquetado, motivoRechazo),
+  eliminar: (tokens, id) => accionEliminarLoteEtiquetado(tokens, id),
 }
 
 // ---------------------------------------------------------------------------

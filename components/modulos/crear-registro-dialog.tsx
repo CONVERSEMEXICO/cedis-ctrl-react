@@ -2,6 +2,10 @@
 
 // Diálogo de alta genérico de los módulos operativos. Lo usan tanto la toolbar
 // de la vista del módulo como el topbar, con la misma `ConfigCreacion`.
+//
+// El permiso se verifica aquí y no en los dos llamadores: sin
+// `crear_registro` el componente no renderiza nada, así que ni la toolbar ni el
+// topbar pueden ofrecer el alta por descuido.
 
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
@@ -28,6 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useOperacionCedis } from '@/hooks/use-operacion-cedis'
+import { usePermission } from '@/hooks/use-permission'
 
 function valoresIniciales(config: ConfigCreacion): Record<string, string> {
   const valores: Record<string, string> = {}
@@ -44,6 +49,7 @@ function folioAutomatico(prefijo: string): string {
 
 export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
   const { ejecutar } = useOperacionCedis()
+  const puedeCrear = usePermission('crear_registro')
   const [abierto, setAbierto] = useState(false)
   const [valores, setValores] = useState<Record<string, string>>(() => valoresIniciales(config))
   const [enviando, setEnviando] = useState(false)
@@ -63,7 +69,8 @@ export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
 
     setEnviando(true)
     const creado = await ejecutar(
-      (token) => config.crear(token, datos),
+      'crear_registro',
+      (tokens) => config.crear(tokens, datos),
       'Registro creado correctamente',
     )
     setEnviando(false)
@@ -73,6 +80,8 @@ export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
     setValores(valoresIniciales(config))
     setAbierto(false)
   }
+
+  if (!puedeCrear) return null
 
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
