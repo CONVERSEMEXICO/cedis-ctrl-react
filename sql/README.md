@@ -30,6 +30,7 @@ Por eso cada SP de aquí termina con **un solo `SELECT`** de la fila afectada: e
 | 08 | [08_sp_altas.sql](08_sp_altas.sql) | `dbo.CrearEmbarque`, `dbo.CrearRecepcion`, `dbo.CrearPedidoSurtido`, `dbo.CrearLoteEtiquetado` — altas con sello de auditoría del server |
 | 09 | [09_diagnostico_columnas.sql](09_diagnostico_columnas.sql) | Solo lectura: tipos y longitudes reales de las columnas contra lo que escriben las altas |
 | 10 | [10_ampliar_id.sql](10_ampliar_id.sql) | Amplía `id` a `NVARCHAR(50)` donde no cabe el GUID que generan las altas. Idempotente |
+| 11 | [11_sp_pedidos.sql](11_sp_pedidos.sql) | `surtido.pedido_id`, `dbo.CrearSurtidoDesdePedido` (abre la orden de surtido de un pedido y lo marca `asignado` en una sola transacción) y `dbo.ActualizarEstadoPedido`. Idempotente |
 
 Ejecútalos en el editor SQL de la Fabric SQL Database (o con `sqlcmd` / Azure Data
 Studio contra la cadena de conexión del *SQL analytics endpoint* de escritura).
@@ -138,6 +139,7 @@ Cada SP valida antes de escribir y lanza `THROW` con número propio:
 | 50033 | `hora_salida` fuera del formato `HH:mm`. |
 | 50034 | Prioridad de surtido inválida (`Alta`, `Media`, `Baja`). |
 | 50035 | Ya existe un registro con ese folio. |
+| 50036 | El pedido ya no está pendiente: no se puede volver a asignar a surtido. |
 
 Fabric los devuelve en el arreglo `errors` de la respuesta, así que llegan como
 `GraphQLRequestError` a [lib/graphql.ts](../lib/graphql.ts) — y `withFallback()` en

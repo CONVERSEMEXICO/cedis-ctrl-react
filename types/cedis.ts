@@ -44,6 +44,15 @@ export type EstadoSurtido =
 
 export type EstadoEtiquetado = 'pendiente' | 'proceso' | 'etiquetado' | 'rechazado'
 
+/**
+ * Ciclo de vida de un pedido capturado por el ERP.
+ *
+ * `asignado` no lo pone la UI: lo sella el server cuando se crea el registro de
+ * surtido que atiende al pedido (ver `crearSurtidoDesdePedido` en
+ * lib/queries.ts). Desde el panel un pedido solo nace 'pendiente'.
+ */
+export type EstadoPedido = 'pendiente' | 'asignado' | 'completado' | 'cancelado'
+
 export type EstadoIncidencia = 'abierta' | 'atencion' | 'resuelta' | 'cerrada'
 
 export type Severidad = 'baja' | 'media' | 'alta' | 'critica'
@@ -98,6 +107,41 @@ export interface Recepcion {
   updated_at: string | null
 }
 
+/**
+ * Pedido capturado en el ERP: el trabajo que hay que surtir.
+ *
+ * Es la cabecera; el detalle vive en `PedidoLinea`. No confundir con
+ * `PedidoSurtido`, que es la **orden de trabajo** del piso que atiende a un
+ * pedido — un pedido puede existir sin surtido asignado, y de ahí que el
+ * vínculo viva del lado de surtido (`PedidoSurtido.pedido_id`).
+ */
+export interface Pedido {
+  id: string
+  folio: string
+  cliente: string
+  fecha_pedido: string
+  fecha_requerida: string | null
+  direccion_entrega: string | null
+  estado: EstadoPedido
+  notas: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Renglón de un pedido. `linea` es el consecutivo que manda el ERP. */
+export interface PedidoLinea {
+  id: string
+  pedido_id: string
+  /** Consecutivo del ERP (1, 2, 3…). Es el orden de captura: no lo reordenes. */
+  linea: number
+  sku: string | null
+  producto: string
+  cantidad_solicitada: number
+  cantidad_surtida: number
+  unidad_medida: string
+  notas: string | null
+}
+
 export interface PedidoSurtido {
   id: string
   /** Número de pedido; hace las veces de folio. */
@@ -107,6 +151,8 @@ export interface PedidoSurtido {
   operador: string | null
   prioridad: Prioridad
   estado: EstadoSurtido
+  /** `Pedido.id` que atiende esta orden; null si se capturó suelta. */
+  pedido_id: string | null
   created_at: string
   updated_at: string | null
 }

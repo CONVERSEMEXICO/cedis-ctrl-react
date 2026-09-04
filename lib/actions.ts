@@ -23,12 +23,14 @@ import type {
   CrearEmbarqueInput,
   CrearEtiquetadoInput,
   CrearRecepcionInput,
+  CrearSurtidoDesdePedidoInput,
   CrearSurtidoInput,
   RegistrarProductividadInput,
 } from '@/lib/queries'
 import type {
   EstadoEmbarque,
   EstadoEtiquetado,
+  EstadoPedido,
   EstadoRecepcion,
   EstadoSurtido,
   ResultadoAccion,
@@ -169,6 +171,36 @@ export async function accionCrearPedidoSurtido(
   item: CrearSurtidoInput,
 ): Promise<ResultadoAccion> {
   return invocar('crearPedidoSurtido', tokens, { ...item })
+}
+
+/**
+ * Abre la orden de surtido de un pedido capturado.
+ *
+ * El `id` lo genera el navegador con `crypto.randomUUID()` y viaja hasta el SP:
+ * si la respuesta se pierde y el usuario vuelve a guardar, el reintento cae
+ * sobre el mismo id en vez de abrir un segundo surtido para el mismo pedido.
+ *
+ * `pedido`, `cliente` y `lineas` **se toman del pedido, nunca de un
+ * formulario**: el SP los recibe tal cual y ni él ni el Route Handler los
+ * cotejan contra la tabla, así que hoy la coherencia entre el surtido y su
+ * pedido depende de quien llama. Los dos llamadores de la app (el diálogo de
+ * /pedidos y el alta manual de surtido con pedido elegido) los leen del
+ * registro. La validación real está anotada como mejora para cuando entre la
+ * tabla `cliente` — ver "MEJORA PENDIENTE" en sql/11_sp_pedidos.sql.
+ */
+export async function accionCrearSurtidoDesdePedido(
+  tokens: TokensCedis,
+  input: CrearSurtidoDesdePedidoInput,
+): Promise<ResultadoAccion> {
+  return invocar('crearSurtidoDesdePedido', tokens, { ...input })
+}
+
+export async function accionActualizarEstadoPedido(
+  tokens: TokensCedis,
+  id: string,
+  estado: EstadoPedido,
+): Promise<ResultadoAccion> {
+  return invocar('actualizarEstadoPedido', tokens, { id, estado })
 }
 
 export async function accionActualizarEstadoSurtido(

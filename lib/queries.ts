@@ -15,6 +15,12 @@
 //   - Las altas tampoco usan las mutations `create*` genéricas: van por SP
 //     (`executeCrear*`, ver sql/08_sp_altas.sql) para que `id`, `created_at` y
 //     `updated_at` los ponga el server y no se puedan escribir desde la API.
+//   - Pedidos rompe la convención de nombres en dos puntos, y son del esquema,
+//     no un descuido: la tabla de renglones se pluraliza a `pedido_lineas` pero
+//     sus inputs son `pedido_lineaFilterInput` / `pedido_lineaOrderByInput`
+//     (singular), y los parámetros de `executeCrearSurtidoDesdePedido` van en
+//     snake_case (`pedido_id`), no en camelCase como `horaSalida` o
+//     `motivoRechazo` en el resto de los SP.
 
 import { ejecutarGraphQL, fetchGraphQL, GraphQLRequestError } from '@/lib/graphql'
 import type {
@@ -22,10 +28,13 @@ import type {
   EstadoEmbarque,
   EstadoEtiquetado,
   EstadoIncidencia,
+  EstadoPedido,
   EstadoRecepcion,
   EstadoSurtido,
   Incidencia,
   LoteEtiquetado,
+  Pedido,
+  PedidoLinea,
   PedidoSurtido,
   Prioridad,
   Recepcion,
@@ -48,10 +57,21 @@ type Token = string | null
 /** Tope de registros por consulta: la operación diaria del CEDIS cabe de sobra. */
 const LIMITE = 100
 
+/**
+ * Tope aparte para los renglones de pedido: son de uno a varios por pedido, así
+ * que 100 se quedaría corto mucho antes que en las demás tablas.
+ */
+const LIMITE_LINEAS = 500
+
 const CAMPOS_EMBARQUE =
   'id folio destino transportista unidades hora_salida estado created_at updated_at'
 const CAMPOS_RECEPCION = 'id folio proveedor anden unidades tipo estado created_at updated_at'
-const CAMPOS_SURTIDO = 'id pedido cliente lineas operador prioridad estado created_at updated_at'
+const CAMPOS_SURTIDO =
+  'id pedido cliente lineas operador prioridad estado pedido_id created_at updated_at'
+const CAMPOS_PEDIDO =
+  'id folio cliente fecha_pedido fecha_requerida direccion_entrega estado notas created_at updated_at'
+const CAMPOS_PEDIDO_LINEA =
+  'id pedido_id linea sku producto cantidad_solicitada cantidad_surtida unidad_medida notas'
 const CAMPOS_ETIQUETADO =
   'id lote producto unidades operador estado motivo_rechazo created_at updated_at'
 const CAMPOS_PRODUCTIVIDAD = 'id operador area turno unidades horas meta created_at'
@@ -82,13 +102,15 @@ const ORDEN_RECIENTE = { created_at: 'DESC' }
 // Carga agrupada del panel
 // ---------------------------------------------------------------------------
 
-/** Los cinco conjuntos con tabla publicada, tal como los devuelve Fabric. */
+/** Los conjuntos con tabla publicada, tal como los devuelve Fabric. */
 export interface DatosOperativos {
   embarques: Embarque[] | null
   recepciones: Recepcion[] | null
   pedidosSurtido: PedidoSurtido[] | null
   lotesEtiquetado: LoteEtiquetado[] | null
   productividad: RegistroProductividad[] | null
+  pedidos: Pedido[] | null
+  pedidoLineas: PedidoLinea[] | null
 }
 
 interface RespuestaDatosOperativos {
@@ -97,15 +119,23 @@ interface RespuestaDatosOperativos {
   surtidos: Conexion<PedidoSurtido> | null
   etiquetados: Conexion<LoteEtiquetado> | null
   productividads: Conexion<RegistroProductividadApi> | null
+  pedidos: Conexion<Pedido> | null
+  pedido_lineas: Conexion<PedidoLinea> | null
 }
 
 /**
- * Trae los cinco conjuntos en **una sola petición**.
+ * Trae los siete conjuntos en **una sola petición**.
  *
  * GraphQL permite varios campos raíz en un documento, y Fabric los resuelve
  * juntos. Antes esto eran cinco peticiones en paralelo (seis con el stub de
  * incidencias) por cada carga del panel, y como cada escritura dispara una
  * recarga, un turno de trabajo normal se comía el límite de tasa.
+ *
+ * Los renglones de pedido entran aquí completos y no por pedido: la vista de
+ * detalle (/pedidos/[id]) filtra en memoria. Pedirlos con
+ * `filter: { pedido_id: { eq: … } }` en cada detalle sería una petición por
+ * pedido abierto —justo el patrón que provocó el 429— y además dejaría esa
+ * vista sin respaldo seed.
  *
  * El `orderBy` va inline y sin comillas porque `DESC` es un enum del esquema;
  * como variable viajaría serializado a string, que es lo que hacen las queries
@@ -134,6 +164,12 @@ export async function getDatosOperativos(token: Token): Promise<DatosOperativos>
       productividads(first: ${LIMITE}, orderBy: { created_at: DESC }) {
         items { ${CAMPOS_PRODUCTIVIDAD} }
       }
+      pedidos(first: ${LIMITE}, filter: null, orderBy: { fecha_pedido: DESC }) {
+        items { ${CAMPOS_PEDIDO} }
+      }
+      pedido_lineas(first: ${LIMITE_LINEAS}, filter: null, orderBy: { linea: ASC }) {
+        items { ${CAMPOS_PEDIDO_LINEA} }
+      }
     }
   `
 
@@ -161,6 +197,8 @@ export async function getDatosOperativos(token: Token): Promise<DatosOperativos>
     pedidosSurtido: datos.surtidos?.items ?? null,
     lotesEtiquetado: datos.etiquetados?.items ?? null,
     productividad: datos.productividads?.items.map(aRegistroProductividad) ?? null,
+    pedidos: datos.pedidos?.items ?? null,
+    pedidoLineas: datos.pedido_lineas?.items ?? null,
   }
 }
 
@@ -423,6 +461,127 @@ export async function crearPedidoSurtido(
     token,
   )
   return primeraFila(datos.executeCrearPedidoSurtido, 'pedido de surtido')
+}
+
+export interface CrearSurtidoDesdePedidoInput {
+  /** Lo genera el navegador con crypto.randomUUID(): hace el alta idempotente. */
+  id: string
+  pedido_id: string
+  /** Folio del pedido; se copia a `surtido.pedido`. */
+  pedido: string
+  cliente: string
+  lineas: number
+  operador?: string | null
+  prioridad?: Prioridad
+}
+
+/**
+ * Lo que devuelve el SP: el registro creado, con el subconjunto de columnas que
+ * expone su result set.
+ *
+ * No se pide `${CAMPOS_SURTIDO}` completo porque el tipo del SP
+ * (`CrearSurtidoDesdePedido`) no es la tabla `surtido`: pedirle `created_at` o
+ * `updated_at` sería pedirle campos que su result set no declara. Da igual para
+ * quien llama —lib/actions.ts descarta la carga útil y refresca— pero pedirlos
+ * costaría un error de validación en Fabric.
+ */
+type SurtidoCreado = Pick<
+  PedidoSurtido,
+  'id' | 'pedido' | 'pedido_id' | 'cliente' | 'lineas' | 'operador' | 'prioridad' | 'estado'
+>
+
+/**
+ * Abre la orden de surtido que atiende a un pedido capturado.
+ *
+ * Es una sola operación y no dos (crear surtido + marcar el pedido) a
+ * propósito: el SP hace las dos escrituras en la misma transacción, así que no
+ * existe el estado intermedio de un pedido 'pendiente' con surtido ya abierto.
+ *
+ * El SP **no recibe `estado`**: el surtido siempre nace 'pendiente'. Para
+ * arrancarlo hay que cambiarle el estatus después, desde el propio módulo de
+ * surtido, que es donde vive la validación de "no se arranca sin operador".
+ *
+ * El folio y el cliente sí viajan desde el cliente —el SP los recibe como
+ * parámetros y no los deriva del pedido—, así que quien llame debe tomarlos del
+ * pedido y no de un formulario: ver `accionCrearSurtidoDesdePedido`.
+ */
+export async function crearSurtidoDesdePedido(
+  token: Token,
+  input: CrearSurtidoDesdePedidoInput,
+): Promise<SurtidoCreado> {
+  const MUTATION = /* GraphQL */ `
+    mutation CrearSurtidoDesdePedido(
+      $id: String
+      $pedido_id: String
+      $pedido: String
+      $cliente: String
+      $lineas: Int
+      $operador: String
+      $prioridad: String
+    ) {
+      executeCrearSurtidoDesdePedido(
+        id: $id
+        pedido_id: $pedido_id
+        pedido: $pedido
+        cliente: $cliente
+        lineas: $lineas
+        operador: $operador
+        prioridad: $prioridad
+      ) {
+        id pedido pedido_id cliente lineas operador prioridad estado
+      }
+    }
+  `
+  const datos = await fetchGraphQL<{ executeCrearSurtidoDesdePedido: SurtidoCreado[] }>(
+    MUTATION,
+    {
+      id: input.id,
+      pedido_id: input.pedido_id,
+      pedido: input.pedido,
+      cliente: input.cliente,
+      lineas: input.lineas,
+      operador: input.operador ?? null,
+      prioridad: input.prioridad ?? 'Media',
+    },
+    token,
+  )
+  return primeraFila(datos.executeCrearSurtidoDesdePedido, 'surtido desde pedido')
+}
+
+// ---------------------------------------------------------------------------
+// Pedidos
+// ---------------------------------------------------------------------------
+//
+// Las altas y las bajas de pedidos (`createpedidos`, `createpedido_linea`,
+// `deletepedidos`, `deletepedido_linea`) existen en el esquema pero el panel no
+// las usa: los pedidos y sus renglones los captura el ERP, y el CEDIS solo los
+// atiende. Si algún día hace falta capturar uno a mano, el `linea` de cada
+// renglón lo manda el ERP —la app nunca lo genera ni lo recalcula—, así que
+// tendría que venir del formulario.
+
+/**
+ * Cambia el estado de un pedido sin pasar por surtido.
+ *
+ * El camino normal a 'asignado' es `crearSurtidoDesdePedido`, que lo mueve como
+ * parte de la transacción. Esto es para lo demás: cancelar un pedido, sobre
+ * todo, que es una decisión del cliente y no un avance de la operación.
+ */
+export async function actualizarEstadoPedido(
+  token: Token,
+  id: string,
+  estado: EstadoPedido,
+): Promise<Pedido | null> {
+  const MUTATION = /* GraphQL */ `
+    mutation ActualizarEstadoPedido($id: String, $estado: String) {
+      executeActualizarEstadoPedido(id: $id, estado: $estado) { ${CAMPOS_PEDIDO} }
+    }
+  `
+  const datos = await fetchGraphQL<{ executeActualizarEstadoPedido: Pedido[] }>(
+    MUTATION,
+    { id, estado },
+    token,
+  )
+  return datos.executeActualizarEstadoPedido[0] ?? null
 }
 
 export async function actualizarEstadoSurtido(

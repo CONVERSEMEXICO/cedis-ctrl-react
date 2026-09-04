@@ -17,6 +17,8 @@ export type Action =
   | 'ver_modulo'
   | 'cambiar_estatus_registro'
   | 'crear_registro'
+  | 'crear_surtido_desde_pedido'
+  | 'cambiar_estatus_pedido'
   | 'eliminar_registro'
   | 'reportar_incidencia'
   | 'cambiar_estatus_incidencia'
@@ -44,6 +46,15 @@ export const MATRIZ_PERMISOS: Record<Action, readonly Role[]> = {
 
   // Alta, baja y seguimiento: supervisión hacia arriba.
   crear_registro: SUPERVISION,
+  // Abrir el surtido de un pedido es un alta que además mueve el estado del
+  // pedido: se declara aparte de `crear_registro` para poder restringirla sin
+  // tocar las altas normales de los módulos.
+  crear_surtido_desde_pedido: SUPERVISION,
+  // Mover el estado de un pedido a mano —cancelarlo, sobre todo— no es avance
+  // de la operación sino una decisión sobre el compromiso con el cliente. Por
+  // eso NO va con `cambiar_estatus_registro`, que sí es del piso y lo tienen
+  // todos los roles.
+  cambiar_estatus_pedido: SUPERVISION,
   eliminar_registro: SUPERVISION,
   cambiar_estatus_incidencia: SUPERVISION,
   ver_productividad_todos: SUPERVISION,

@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ClipboardList,
   Gauge,
   LayoutDashboard,
   PackageCheck,
@@ -23,6 +24,8 @@ export interface SidebarCounts {
   embarques: number
   recepciones: number
   surtido: number
+  /** Solo los pendientes: es el trabajo que falta asignar, no el total. */
+  pedidos: number
   etiquetado: number
   productividad: number
   incidencias: number
@@ -56,6 +59,13 @@ const NAV_ITEMS = [
     icon: Warehouse,
     dotClass: 'bg-surtido',
     countKey: 'surtido' as const,
+  },
+  {
+    href: '/pedidos',
+    label: 'Pedidos',
+    icon: ClipboardList,
+    dotClass: 'bg-pedidos',
+    countKey: 'pedidos' as const,
   },
   {
     href: '/etiquetado',

@@ -10,6 +10,8 @@ import type {
   Embarque,
   Incidencia,
   LoteEtiquetado,
+  Pedido,
+  PedidoLinea,
   PedidoSurtido,
   Recepcion,
   RegistroProductividad,
@@ -91,6 +93,93 @@ export function metricasSurtido(pedidos: PedidoSurtido[]): MetricasSurtido {
     pctCompletados: pct(completados, pedidos.length),
     totalLineas: pedidos.reduce((acc, p) => acc + (p.lineas ?? 0), 0),
   }
+}
+
+// ---------------------------------------------------------------------------
+// Pedidos
+// ---------------------------------------------------------------------------
+//
+// Un pedido 'completado' o 'cancelado' ya no es trabajo por hacer: los tres
+// indicadores lo excluyen. Esa regla vive en `pedidoEnJuego()` y no repetida en
+// cada agregado, porque si el día de mañana se agrega un estado terminal hay un
+// solo lugar donde decirlo.
+
+/** ¿El pedido todavía cuenta como trabajo pendiente del CEDIS? */
+export function pedidoEnJuego(pedido: Pedido): boolean {
+  return pedido.estado !== 'completado' && pedido.estado !== 'cancelado'
+}
+
+/**
+ * ¿La fecha ya pasó?
+ *
+ * `ahora` es un parámetro y no `new Date()` a secas para que la tabla y los
+ * indicadores puedan comparar contra el mismo instante: con dos relojes, una
+ * fila puede pintarse vencida mientras el conteo de arriba dice que no hay
+ * ninguna.
+ */
+export function esFechaVencida(iso: string | null, ahora: Date = new Date()): boolean {
+  if (!iso) return false
+  const fecha = new Date(iso).getTime()
+  return Number.isFinite(fecha) && fecha < ahora.getTime()
+}
+
+/** Renglones de un pedido, ya en el orden del ERP (`linea` ascendente). */
+export function lineasDePedido(lineas: PedidoLinea[], pedidoId: string): PedidoLinea[] {
+  return lineas.filter((linea) => linea.pedido_id === pedidoId)
+}
+
+/** Cuántos renglones tiene cada pedido, indexado por `Pedido.id`. */
+export function conteoLineasPorPedido(lineas: PedidoLinea[]): Record<string, number> {
+  const conteo: Record<string, number> = {}
+  for (const linea of lineas) {
+    conteo[linea.pedido_id] = (conteo[linea.pedido_id] ?? 0) + 1
+  }
+  return conteo
+}
+
+/** Lo que falta por surtir de un renglón; nunca negativo si se sobresurtió. */
+export function faltantePorSurtir(linea: PedidoLinea): number {
+  return Math.max(0, linea.cantidad_solicitada - linea.cantidad_surtida)
+}
+
+export function lineaCumplida(linea: PedidoLinea): boolean {
+  return linea.cantidad_surtida >= linea.cantidad_solicitada
+}
+
+export interface MetricasPedidos {
+  total: number
+  /** Pedidos que todavía no tienen surtido asignado. */
+  pendientes: number
+  /** Pedidos vivos cuya fecha requerida ya pasó. */
+  vencidos: number
+  /** Piezas que faltan por surtir en los pedidos vivos. */
+  lineasPendientes: number
+}
+
+export function metricasPedidos(
+  pedidos: Pedido[],
+  lineas: PedidoLinea[],
+  ahora: Date = new Date(),
+): MetricasPedidos {
+  const enJuego = pedidos.filter(pedidoEnJuego)
+  const idsEnJuego = new Set(enJuego.map((pedido) => pedido.id))
+
+  return {
+    total: pedidos.length,
+    pendientes: pedidos.filter((pedido) => pedido.estado === 'pendiente').length,
+    vencidos: enJuego.filter((pedido) => esFechaVencida(pedido.fecha_requerida, ahora)).length,
+    lineasPendientes: lineas
+      .filter((linea) => idsEnJuego.has(linea.pedido_id))
+      .reduce((acc, linea) => acc + faltantePorSurtir(linea), 0),
+  }
+}
+
+/** El registro de surtido que atiende a un pedido, si ya se abrió alguno. */
+export function surtidoDePedido(
+  registros: PedidoSurtido[],
+  pedidoId: string,
+): PedidoSurtido | null {
+  return registros.find((registro) => registro.pedido_id === pedidoId) ?? null
 }
 
 // ---------------------------------------------------------------------------

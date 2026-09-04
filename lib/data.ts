@@ -6,12 +6,16 @@
 // argumento; quien lo pide es <ProveedorDatosCedis>
 // (components/providers/cedis-data-provider.tsx), el único que llama aquí.
 //
-// Los cinco conjuntos con tabla publicada viajan en **una sola petición**
+// Los conjuntos con tabla publicada viajan en **una sola petición**
 // (getDatosOperativos). Antes eran cinco en paralelo más el stub de
 // incidencias: seis por carga, y como cada escritura dispara una recarga, la
 // operación normal del CEDIS excedía el límite de tasa de Fabric y la API
 // empezaba a responder 429. Incidencias ya no sale a la red: su tabla no está
 // publicada, así que el respaldo seed se resuelve en local.
+//
+// Pedidos y sus renglones se sumaron a esa misma petición, no como llamadas
+// nuevas: son dos campos raíz más del mismo documento y la carga del panel
+// sigue costando una sola petición.
 
 import { esLimiteExcedido, esSesionExpirada } from '@/lib/graphql'
 import { getDatosOperativos } from '@/lib/queries'
@@ -19,6 +23,8 @@ import {
   embarquesSeed,
   incidenciasSeed,
   lotesEtiquetadoSeed,
+  pedidoLineasSeed,
+  pedidosSeed,
   pedidosSurtidoSeed,
   recepcionesSeed,
   registrosProductividadSeed,
@@ -27,6 +33,8 @@ import type {
   Embarque,
   Incidencia,
   LoteEtiquetado,
+  Pedido,
+  PedidoLinea,
   PedidoSurtido,
   Recepcion,
   RegistroProductividad,
@@ -42,7 +50,7 @@ export interface ResultadoDatos<T> {
   sesionExpirada: boolean
 }
 
-/** Los seis conjuntos que consume el panel. */
+/** Los ocho conjuntos que consume el panel. */
 export interface DatosCedis {
   embarques: Embarque[]
   recepciones: Recepcion[]
@@ -50,6 +58,10 @@ export interface DatosCedis {
   lotesEtiquetado: LoteEtiquetado[]
   incidencias: Incidencia[]
   productividad: RegistroProductividad[]
+  /** Cabeceras de pedido del ERP. */
+  pedidos: Pedido[]
+  /** Renglones de **todos** los pedidos; la vista de detalle filtra en memoria. */
+  pedidoLineas: PedidoLinea[]
 }
 
 /** Qué conjuntos vinieron del respaldo seed; cada página pinta su banner. */
@@ -72,6 +84,8 @@ export const DATOS_VACIOS: DatosCedis = {
   lotesEtiquetado: [],
   incidencias: [],
   productividad: [],
+  pedidos: [],
+  pedidoLineas: [],
 }
 
 export const OFFLINE_INICIAL: OfflinePorConjunto = {
@@ -81,6 +95,8 @@ export const OFFLINE_INICIAL: OfflinePorConjunto = {
   lotesEtiquetado: false,
   incidencias: false,
   productividad: false,
+  pedidos: false,
+  pedidoLineas: false,
 }
 
 /** Lo que se ve cuando no hay API: la operación de ejemplo, completa. */
@@ -91,6 +107,8 @@ const SEED: DatosCedis = {
   lotesEtiquetado: lotesEtiquetadoSeed,
   incidencias: incidenciasSeed,
   productividad: registrosProductividadSeed,
+  pedidos: pedidosSeed,
+  pedidoLineas: pedidoLineasSeed,
 }
 
 /**
@@ -120,6 +138,8 @@ function todoOffline(error: unknown): ResultadoDatosCedis {
       lotesEtiquetado: true,
       incidencias: true,
       productividad: true,
+      pedidos: true,
+      pedidoLineas: true,
     },
     sesionExpirada: esSesionExpirada(error),
     limiteExcedido: esLimiteExcedido(error),
@@ -139,6 +159,8 @@ export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedi
   const pedidosSurtido = conRespaldo('pedidosSurtido', operativos.pedidosSurtido)
   const lotesEtiquetado = conRespaldo('lotesEtiquetado', operativos.lotesEtiquetado)
   const productividad = conRespaldo('productividad', operativos.productividad)
+  const pedidos = conRespaldo('pedidos', operativos.pedidos)
+  const pedidoLineas = conRespaldo('pedidoLineas', operativos.pedidoLineas)
 
   return {
     datos: {
@@ -150,6 +172,8 @@ export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedi
       // una petición en averiguarlo. Ver getIncidencias en lib/queries.ts.
       incidencias: SEED.incidencias,
       productividad: productividad.datos,
+      pedidos: pedidos.datos,
+      pedidoLineas: pedidoLineas.datos,
     },
     offline: {
       embarques: embarques.offline,
@@ -158,6 +182,8 @@ export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedi
       lotesEtiquetado: lotesEtiquetado.offline,
       incidencias: true,
       productividad: productividad.offline,
+      pedidos: pedidos.offline,
+      pedidoLineas: pedidoLineas.offline,
     },
     sesionExpirada: false,
     limiteExcedido: false,

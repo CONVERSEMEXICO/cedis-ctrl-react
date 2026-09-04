@@ -40,7 +40,7 @@ Tres archivos encadenados, y es la parte del código que hay que entender antes 
 
 - [lib/graphql.ts](lib/graphql.ts) — cliente genérico contra la GraphQL API de **Microsoft Fabric SQL Database**. Lee `NEXT_PUBLIC_FABRIC_GRAPHQL_ENDPOINT` de env; sin token o sin endpoint lanza `GraphQLRequestError` de inmediato, y marca `sesionExpirada` cuando Fabric responde 401. Usa `cache: 'no-store'`. Dos funciones: `fetchGraphQL()` lanza ante cualquier error, y `ejecutarGraphQL()` devuelve la respuesta cruda para tolerar **errores parciales** (lo que necesita la consulta agrupada). Ver "Límite de tasa" abajo.
 - [lib/queries.ts](lib/queries.ts) — una función por operación. Los cinco módulos con tabla publicada (embarques, recepciones, surtido, etiquetado, productividad) tienen su documento GraphQL real; **incidencias sigue en stub `# TODO`** porque esa tabla todavía no está expuesta en la API. Convenciones del esquema de Fabric que hay que respetar tal cual: toda query devuelve un Connection (`{ items, endCursor, hasNextPage }`), la pluralización la decide Fabric (`surtidos`, `etiquetados`, `productividads`) aunque los `*Input` conserven el nombre de la tabla, y **toda escritura va por stored procedure** (`executeCrear*`, `executeActualizarEstado*`, `executeRegistrarProductividad`), nunca por las mutations `create`/`update` genéricas: el input que Fabric genera por tabla expone `created_at` y `updated_at`, y esas columnas las tiene que sellar el server. Los SP viven en [sql/](sql/) — ver la nota "Auditoría" en [sql/README.md](sql/README.md).
-- [lib/data.ts](lib/data.ts) — `cargarDatosCedis(token)` devuelve `{ datos, offline, sesionExpirada, limiteExcedido }`, con una bandera de offline **por conjunto**, y usa los arreglos de [lib/seed-data.ts](lib/seed-data.ts) como respaldo. Los cinco conjuntos con tabla publicada viajan en **una sola petición** (`getDatosOperativos`); incidencias no sale a la red. Ver "Límite de tasa".
+- [lib/data.ts](lib/data.ts) — `cargarDatosCedis(token)` devuelve `{ datos, offline, sesionExpirada, limiteExcedido }`, con una bandera de offline **por conjunto**, y usa los arreglos de [lib/seed-data.ts](lib/seed-data.ts) como respaldo. Los siete conjuntos con tabla publicada viajan en **una sola petición** (`getDatosOperativos`); incidencias no sale a la red. Ver "Límite de tasa".
 - [lib/actions.ts](lib/actions.ts) — la única vía de escritura. **No hablan con Fabric**: hacen `POST /api/cedis/<operacion>` al Route Handler, que es donde se verifica el rol (ver "Autorización" abajo). Reciben `TokensCedis` como primer argumento y devuelven `ResultadoAccion` (`{ ok }` / `{ ok: false, error, sesionExpirada }`) en vez de lanzar.
 
 Quien llama a `lib/data.ts` es **solo** [`<ProveedorDatosCedis>`](components/providers/cedis-data-provider.tsx): pide el token, carga los seis conjuntos y los expone con `useDatosCedis()` (`datos`, `offline`, `listo`, `cargando`, `refrescar`). Las páginas leen de ese hook — nunca de `lib/queries.ts` ni de `lib/seed-data.ts` — y usan `offline.<conjunto>` para pintar `<BannerOffline />`. `refrescar()` es lo que sustituye al `revalidatePath` de las server actions: lo llaman el botón "Actualizar" del topbar y `useOperacionCedis` después de cada escritura.
@@ -55,6 +55,8 @@ Fabric limita la tasa de peticiones y responde `429 RequestBlocked` con una vent
 |---|---|---|
 | Carga del panel | 6 peticiones | **1** |
 | Escritura (mutación + recarga) | 7 peticiones | **2** |
+
+Sigue siendo 1 y 2 después de agregar pedidos: sus dos conjuntos entraron como campos raíz de la misma consulta, no como peticiones nuevas.
 
 Tres cambios, y conviene no deshacerlos por accidente:
 
@@ -114,6 +116,22 @@ Está separado a propósito: v0 regenera archivos completos, y las páginas son 
 
 **Al agregar un indicador, va aquí — no inline en el `page.tsx`.** Usa `pct()` para cualquier porcentaje (ya protege contra división entre cero).
 
+### Pedidos y su vínculo con surtido
+
+`Pedido` (la cabecera que captura el ERP) y `PedidoSurtido` (la orden de trabajo del piso) son cosas distintas y el nombre no ayuda: un pedido puede existir sin surtido, y el vínculo vive del lado de surtido en `pedido_id`.
+
+- **La ruta normal es de pedidos hacia surtido.** El botón "Crear surtido" de [/pedidos](app/pedidos/page.tsx) llama a `crearSurtidoDesdePedido`, que abre la orden **y** marca el pedido `asignado` en la misma transacción ([sql/11_sp_pedidos.sql](sql/11_sp_pedidos.sql)). Partirlo en dos llamadas dejaría, ante una caída a medio camino, un pedido `pendiente` con surtido ya abierto —y la UI volvería a ofrecer el botón—.
+- **El SP no recibe `estado`:** el surtido nace siempre `pendiente`. Arrancarlo es un cambio de estatus posterior desde el módulo de surtido, que es donde vive la regla de que no se pasa a `surtiendo` sin operador. Por eso el diálogo no tiene select de estatus inicial.
+- **`pedido` (folio), `cliente` y `lineas` sí son parámetros del SP** y viajan desde el navegador; ni el SP ni el Route Handler los cotejan contra la tabla. Los dos llamadores los leen del registro del pedido, nunca de un campo capturado — validarlos en el Route Handler costaría una lectura contra Fabric por cada escritura, que es justo lo que el diseño de una sola petición evita. **Está anotado como mejora, no como pendiente olvidado:** la tabla `cliente` entra en un release posterior y es la que permite validar la integridad; el sitio y la forma del cambio están escritos en el bloque "MEJORA PENDIENTE" de [sql/11_sp_pedidos.sql](sql/11_sp_pedidos.sql). Hasta entonces `cliente` es texto libre y compararlo contra sí mismo no agregaría garantía.
+- El campo "Pedido asociado (opcional)" del alta manual de surtido **también pasa por ese SP**: no hay parámetro para escribir `pedido_id` en un alta suelta. Al elegir un pedido, el alta cambia de operación y de permiso — eso lo declara `accionDe` en la config, para que el check del cliente y el del servidor miren la misma acción.
+- El `id` del surtido lo genera el navegador (`nuevoId()` de [lib/ids.ts](lib/ids.ts)) al **abrir** el diálogo, no al enviarlo: así el reintento tras una respuesta perdida cae sobre el mismo id y el SP no abre un segundo surtido. En el alta genérica ese id llega por `ContextoCreacion.idOperacion`.
+- **`executeActualizarEstadoPedido` es solo para cancelar.** `asignado` lo pone el SP dentro de su transacción y `completado` lo cierra la operación; cancelar es lo único que no tiene otro camino, y por eso exige `cambiar_estatus_pedido` (supervisión) y no el `cambiar_estatus_registro` del piso.
+- Dos rarezas del esquema que no son descuidos: la tabla de renglones se pluraliza `pedido_lineas` pero sus inputs son `pedido_lineaFilterInput` / `pedido_lineaOrderByInput` (singular), y los parámetros de `executeCrearSurtidoDesdePedido` van en **snake_case** (`pedido_id`), a diferencia del camelCase (`horaSalida`, `motivoRechazo`) del resto de los SP.
+- `createpedidos` / `createpedido_linea` / `delete*` existen en el esquema pero el panel no las usa: los pedidos los captura el ERP. El `linea` de cada renglón lo manda el ERP — la app nunca lo genera ni lo recalcula.
+- Pedidos no está en `ModuloOperativo`: ese tipo son los seis módulos sobre los que se levanta una incidencia, y un problema con un pedido se reporta contra surtido. Por eso `/pedidos` tiene entrada en `TITULOS` pero no en `MODULO_POR_RUTA`.
+- **Las líneas de todos los pedidos se cargan de una vez** y `/pedidos/[id]` filtra en memoria (`lineasDePedido`). Pedirlas por pedido sería una petición por detalle abierto —el patrón que provocó el 429— y dejaría la vista sin respaldo seed.
+- Llegar a un registro concreto de otro módulo se hace con el **enfoque por query param**: `/surtido?pedido=<id>`, declarado en `enfoque` de la config del módulo y resuelto por `<ModuleControlView>`. No hay ruta de detalle por módulo; el detalle de un renglón se ve en el panel lateral que declara `detalle` en la config.
+
 ### Módulos operativos
 
 Seis módulos —`embarques`, `recepciones`, `surtido`, `etiquetado`, `productividad`, `incidencias`— aparecen replicados en seis lugares que deben mantenerse sincronizados al agregar o renombrar uno:
@@ -131,7 +149,11 @@ Cada estado de cada módulo se declara en `status-config.ts` como `{ label, dotC
 
 Los cuatro módulos operativos con tabla (embarques, recepciones, surtido, etiquetado) **no tienen UI propia**: los cuatro renderizan [`<ModuleControlView>`](components/modulos/module-control-view.tsx) —filtro por estatus, "Mostrando X de Y", alta, select de estatus por renglón, borrado con confirmación— y lo único que cambia es la `ConfigModulo` de [components/modulos/configs.tsx](components/modulos/configs.tsx): columnas, campos del alta y qué operación de `lib/actions.ts` invoca cada acción (todas reciben el token como primer argumento). **Al tocar el comportamiento de un módulo, edita su config, no la vista.**
 
-Casos especiales que ya resuelve la config: etiquetado declara `estadoQuePideMotivo: 'rechazado'` (el SP exige motivo), y surtido/recepciones reenvían `operador` / `anden` del propio registro porque sus SP los conservan con `COALESCE`.
+Casos especiales que ya resuelve la config: etiquetado declara `estadoQuePideMotivo: 'rechazado'` (el SP exige motivo), surtido/recepciones reenvían `operador` / `anden` del propio registro porque sus SP los conservan con `COALESCE`, y surtido declara además `detalle` (el panel lateral del botón del ojo) y `enfoque` (el filtro por `?pedido=`).
+
+El alta genérica tiene tres extensiones que solo usa surtido hoy: un campo puede sacar sus opciones de los datos ya cargados con `opcionesDe(datos)` en vez de tenerlas escritas; `crear()` recibe un `ContextoCreacion` con esos mismos `datos` y un `idOperacion` estable entre reintentos; y `accionDe(valores)` declara qué permiso exige el alta cuando depende de lo capturado. Las tres existen para que el select de "Pedido asociado" pueda desviar el alta al SP del vínculo sin que el diálogo sepa nada de pedidos.
+
+`<ModuleControlView>` se envuelve a sí misma en `<Suspense>` porque usa `useSearchParams()` para el enfoque: si el límite viviera en cada página, la que se olvidara de ponerlo tiraría el build.
 
 Los permisos sí viven en la vista, no en la config, porque son iguales para los cuatro módulos: el botón de alta y la columna de borrar se ocultan sin permiso —y el `colSpan` de la fila vacía se ajusta—, mientras el select de estatus se queda visible pero deshabilitado (cambiar el estatus es la operación del piso: la puede hacer cualquier rol).
 
@@ -162,7 +184,7 @@ Al agregar componentes, usa el CLI de shadcn con esta configuración; no copies 
 
 Dark-only, forzado: `<html className="dark">` fijo en el layout, `color-scheme: dark`, sin toggle (`next-themes` solo lo consume el `Toaster`). La paleta vive en [app/globals.css](app/globals.css) como tokens oklch bajo `:root`, expuestos a Tailwind v4 vía `@theme inline`. Tokens propios del dominio, además de los de shadcn:
 
-- `--module-{embarques,recepciones,surtido,etiquetado,productividad,incidencias}` → utilidades `bg-embarques`, `text-surtido`, `border-t-incidencias`, …
+- `--module-{embarques,recepciones,surtido,pedidos,etiquetado,productividad,incidencias}` → utilidades `bg-embarques`, `text-surtido`, `border-t-incidencias`, …
 - `--severidad-{baja,media,alta,critica}`, `--success`, `--warning`
 - utilidad `.hazard-stripe` (franja diagonal ámbar/gris del encabezado)
 

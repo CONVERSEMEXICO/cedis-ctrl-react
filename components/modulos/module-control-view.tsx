@@ -7,8 +7,10 @@
 // las operaciones de escritura que invocan. Todo eso llega en `config`
 // (components/modulos/configs.tsx); aquí no hay nada específico de un módulo.
 
-import { X } from 'lucide-react'
-import { useState } from 'react'
+import { Eye, X } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { Suspense, useState } from 'react'
 import { CrearRegistroDialog } from '@/components/modulos/crear-registro-dialog'
 import type { ConfigModulo, RegistroBase } from '@/components/modulos/tipos'
 import { Button } from '@/components/ui/button'
@@ -32,6 +34,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import {
   Table,
   TableBody,
   TableCell,
@@ -46,7 +55,23 @@ import { cn } from '@/lib/utils'
 
 const TODOS = 'todos'
 
-export function ModuleControlView<T extends RegistroBase>({
+/**
+ * `useSearchParams()` obliga a un límite de Suspense en una página que Next
+ * prerenderiza, y las cuatro páginas de módulo lo son. Se pone aquí y no en
+ * cada página para que ninguna se pueda olvidar de ponerlo y tirar el build.
+ */
+export function ModuleControlView<T extends RegistroBase>(props: {
+  config: ConfigModulo<T>
+  registros: T[]
+}) {
+  return (
+    <Suspense fallback={null}>
+      <VistaControl {...props} />
+    </Suspense>
+  )
+}
+
+function VistaControl<T extends RegistroBase>({
   config,
   registros,
 }: {
@@ -64,8 +89,23 @@ export function ModuleControlView<T extends RegistroBase>({
   const [aEliminar, setAEliminar] = useState<T | null>(null)
   const [pideMotivo, setPideMotivo] = useState<T | null>(null)
   const [motivo, setMotivo] = useState('')
+  const [detalleDe, setDetalleDe] = useState<T | null>(null)
 
-  const visibles = filtro === TODOS ? registros : registros.filter((r) => r.estado === filtro)
+  // Enfoque por URL: /surtido?pedido=<id> llega desde el módulo de pedidos.
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const valorEnfoque = config.enfoque ? searchParams.get(config.enfoque.param) : null
+  const enfoque = config.enfoque
+  const enfocado = enfoque && valorEnfoque ? enfoque : null
+
+  const porEstado = filtro === TODOS ? registros : registros.filter((r) => r.estado === filtro)
+  // El enfoque se aplica encima del filtro de estatus, no en su lugar: si el
+  // registro enfocado no cabe en el estatus elegido, la tabla queda vacía y el
+  // aviso explica por qué, en vez de ignorar en silencio uno de los dos.
+  const visibles =
+    enfocado && valorEnfoque
+      ? porEstado.filter((registro) => enfocado.coincide(registro, valorEnfoque))
+      : porEstado
 
   async function ejecutar(
     id: string,
@@ -153,6 +193,21 @@ export function ModuleControlView<T extends RegistroBase>({
         <CrearRegistroDialog config={config} />
       </div>
 
+      {enfocado && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-pedidos/30 bg-pedidos/10 px-3 py-2 text-xs text-pedidos"
+        >
+          <span>{enfocado.aviso}</span>
+          <Link
+            href={pathname}
+            className="font-medium underline underline-offset-2 hover:text-foreground"
+          >
+            Ver todos
+          </Link>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-lg border border-border">
         <Table>
           <TableHeader>
@@ -166,6 +221,11 @@ export function ModuleControlView<T extends RegistroBase>({
                 </TableHead>
               ))}
               <TableHead>Estatus</TableHead>
+              {config.detalle && (
+                <TableHead className="w-10">
+                  <span className="sr-only">Ver detalle</span>
+                </TableHead>
+              )}
               {puedeEliminar && (
                 <TableHead className="w-10">
                   <span className="sr-only">Eliminar</span>
@@ -216,6 +276,18 @@ export function ModuleControlView<T extends RegistroBase>({
                       </SelectContent>
                     </Select>
                   </TableCell>
+                  {config.detalle && (
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDetalleDe(registro)}
+                        aria-label={`Ver detalle del ${config.singular}`}
+                      >
+                        <Eye />
+                      </Button>
+                    </TableCell>
+                  )}
                   {puedeEliminar && (
                     <TableCell>
                       <Button
@@ -235,7 +307,12 @@ export function ModuleControlView<T extends RegistroBase>({
             {visibles.length === 0 && (
               <TableRow className="hover:bg-transparent">
                 <TableCell
-                  colSpan={config.columnas.length + (puedeEliminar ? 2 : 1)}
+                  colSpan={
+                    config.columnas.length +
+                    1 +
+                    (config.detalle ? 1 : 0) +
+                    (puedeEliminar ? 1 : 0)
+                  }
                   className="py-12 text-center text-sm text-muted-foreground"
                 >
                   No hay registros con este filtro.
@@ -300,6 +377,29 @@ export function ModuleControlView<T extends RegistroBase>({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {config.detalle && (
+        <Sheet
+          open={detalleDe !== null}
+          onOpenChange={(abierto) => {
+            if (!abierto) setDetalleDe(null)
+          }}
+        >
+          <SheetContent>
+            {detalleDe && (
+              <>
+                <SheetHeader>
+                  <SheetTitle>{config.detalle.titulo}</SheetTitle>
+                  <SheetDescription className="font-mono text-xs">
+                    {config.detalle.subtitulo(detalleDe)}
+                  </SheetDescription>
+                </SheetHeader>
+                {config.detalle.cuerpo(detalleDe, () => setDetalleDe(null))}
+              </>
+            )}
+          </SheetContent>
+        </Sheet>
+      )}
     </div>
   )
 }
