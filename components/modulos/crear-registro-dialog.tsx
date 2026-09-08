@@ -9,7 +9,8 @@
 
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
-import type { ConfigCreacion } from '@/components/modulos/tipos'
+import { SIN_VALOR, type CampoCreacion, type ConfigCreacion } from '@/components/modulos/tipos'
+import { useDatosCedis } from '@/components/providers/cedis-data-provider'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -33,6 +34,8 @@ import {
 } from '@/components/ui/select'
 import { useOperacionCedis } from '@/hooks/use-operacion-cedis'
 import { usePermission } from '@/hooks/use-permission'
+import type { DatosCedis } from '@/lib/data'
+import { nuevoId } from '@/lib/ids'
 
 function valoresIniciales(config: ConfigCreacion): Record<string, string> {
   const valores: Record<string, string> = {}
@@ -42,6 +45,16 @@ function valoresIniciales(config: ConfigCreacion): Record<string, string> {
   return valores
 }
 
+/**
+ * Opciones que se pintan en un select: las de la config, o las que salen de los
+ * datos ya cargados. Un campo con `vacio` abre la lista con esa entrada, que es
+ * cómo se deselecciona un campo opcional.
+ */
+function resolverOpciones(campo: CampoCreacion, datos: DatosCedis) {
+  const base = campo.opcionesDe ? campo.opcionesDe(datos) : (campo.opciones ?? [])
+  return campo.vacio ? [{ value: SIN_VALOR, label: campo.vacio }, ...base] : base
+}
+
 /** Folio de respaldo cuando el operador deja el campo vacío: EMB-4821. */
 function folioAutomatico(prefijo: string): string {
   return `${prefijo}-${Math.floor(1000 + Math.random() * 9000)}`
@@ -49,28 +62,43 @@ function folioAutomatico(prefijo: string): string {
 
 export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
   const { ejecutar } = useOperacionCedis()
+  const { datos } = useDatosCedis()
   const puedeCrear = usePermission('crear_registro')
   const [abierto, setAbierto] = useState(false)
   const [valores, setValores] = useState<Record<string, string>>(() => valoresIniciales(config))
   const [enviando, setEnviando] = useState(false)
+  // Se fija al abrir, no al enviar: un reintento después de una respuesta
+  // perdida tiene que llevar el mismo id para que el SP lo reconozca en vez de
+  // crear un segundo registro. Solo lo usan las altas que van por SP con id.
+  const [idOperacion, setIdOperacion] = useState(() => nuevoId(config.prefijoFolio.toLowerCase()))
 
   function actualizar(nombre: string, valor: string) {
     setValores((previos) => ({ ...previos, [nombre]: valor }))
+  }
+
+  function alAbrir(valor: boolean) {
+    if (valor) setIdOperacion(nuevoId(config.prefijoFolio.toLowerCase()))
+    setAbierto(valor)
   }
 
   async function alEnviar(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault()
     if (enviando) return
 
-    const datos = { ...valores }
-    if (!datos[config.campoFolio] || datos[config.campoFolio].trim() === '') {
-      datos[config.campoFolio] = folioAutomatico(config.prefijoFolio)
+    const enviados = { ...valores }
+    if (!enviados[config.campoFolio] || enviados[config.campoFolio].trim() === '') {
+      enviados[config.campoFolio] = folioAutomatico(config.prefijoFolio)
+    }
+    // El centinela del "sin elegir" no sale del diálogo: la config recibe la
+    // cadena vacía, que es lo que ya sabe traducir a null.
+    for (const [nombre, valor] of Object.entries(enviados)) {
+      if (valor === SIN_VALOR) enviados[nombre] = ''
     }
 
     setEnviando(true)
     const creado = await ejecutar(
-      'crear_registro',
-      (tokens) => config.crear(tokens, datos),
+      config.accionDe?.(enviados) ?? 'crear_registro',
+      (tokens) => config.crear(tokens, enviados, { datos, idOperacion }),
       'Registro creado correctamente',
     )
     setEnviando(false)
@@ -84,7 +112,7 @@ export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
   if (!puedeCrear) return null
 
   return (
-    <Dialog open={abierto} onOpenChange={setAbierto}>
+    <Dialog open={abierto} onOpenChange={alAbrir}>
       <DialogTrigger render={<Button size="sm" />}>
         <Plus data-icon="inline-start" />
         {config.etiquetaNuevo}
@@ -100,6 +128,7 @@ export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
           <FieldGroup>
             {config.campos.map((campo) => {
               const id = `${config.prefijoFolio}-${campo.nombre}`
+              const opciones = resolverOpciones(campo, datos)
               return (
                 <Field key={campo.nombre}>
                   <FieldLabel htmlFor={id}>{campo.etiqueta}</FieldLabel>
@@ -111,14 +140,14 @@ export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
                       <SelectTrigger id={id} className="w-full">
                         <SelectValue>
                           {(valor) =>
-                            campo.opciones?.find((o) => o.value === String(valor))?.label ??
+                            opciones.find((o) => o.value === String(valor))?.label ??
                             'Selecciona una opción'
                           }
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          {campo.opciones?.map((opcion) => (
+                          {opciones.map((opcion) => (
                             <SelectItem key={opcion.value} value={opcion.value}>
                               {opcion.label}
                             </SelectItem>
@@ -137,6 +166,9 @@ export function CrearRegistroDialog({ config }: { config: ConfigCreacion }) {
                       value={valores[campo.nombre] ?? ''}
                       onChange={(evento) => actualizar(campo.nombre, evento.target.value)}
                     />
+                  )}
+                  {campo.ayuda && (
+                    <p className="text-xs text-muted-foreground">{campo.ayuda}</p>
                   )}
                 </Field>
               )

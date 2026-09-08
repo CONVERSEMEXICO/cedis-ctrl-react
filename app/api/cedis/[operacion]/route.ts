@@ -23,18 +23,22 @@ import {
 import {
   esLimiteExcedido,
   esSesionExpirada,
+  esSinAcceso,
   GraphQLRequestError,
   MENSAJE_SESION_EXPIRADA,
+  MENSAJE_SIN_ACCESO_FABRIC,
 } from '@/lib/graphql'
 import {
   actualizarEstadoEmbarque,
   actualizarEstadoEtiquetado,
+  actualizarEstadoPedido,
   actualizarEstadoRecepcion,
   actualizarEstadoSurtido,
   crearEmbarque,
   crearLoteEtiquetado,
   crearPedidoSurtido,
   crearRecepcion,
+  crearSurtidoDesdePedido,
   eliminarEmbarque,
   eliminarLoteEtiquetado,
   eliminarPedidoSurtido,
@@ -45,6 +49,7 @@ import {
 import type {
   EstadoEmbarque,
   EstadoEtiquetado,
+  EstadoPedido,
   EstadoRecepcion,
   EstadoSurtido,
   Prioridad,
@@ -166,6 +171,28 @@ const OPERACIONES: Record<string, OperacionServidor> = {
         estado: (textoOpcional(c, 'estado') ?? 'pendiente') as EstadoSurtido,
       }),
   },
+  // El SP recibe folio, cliente y conteo de líneas como parámetros —no los
+  // deriva del pedido—, así que llegan del cuerpo y se reenvían. Quien llama
+  // tiene que tomarlos del pedido y no de un formulario: el servidor no puede
+  // verificarlo sin una lectura extra, y esa lectura contra Fabric por cada
+  // escritura es justo lo que el diseño de una sola petición evita. La
+  // validación de integridad queda del lado del SP cuando entre la tabla
+  // `cliente` — ver "MEJORA PENDIENTE" en sql/11_sp_pedidos.sql.
+  //
+  // `estado` no se lee porque el SP no lo acepta: el surtido nace 'pendiente'.
+  crearSurtidoDesdePedido: {
+    accion: 'crear_surtido_desde_pedido',
+    ejecutar: (token, c) =>
+      crearSurtidoDesdePedido(token, {
+        id: texto(c, 'id'),
+        pedido_id: texto(c, 'pedido_id'),
+        pedido: texto(c, 'pedido'),
+        cliente: texto(c, 'cliente'),
+        lineas: numero(c, 'lineas'),
+        operador: textoOpcional(c, 'operador'),
+        prioridad: (textoOpcional(c, 'prioridad') ?? 'Media') as Prioridad,
+      }),
+  },
   actualizarEstadoSurtido: {
     accion: 'cambiar_estatus_registro',
     ejecutar: (token, c) =>
@@ -179,6 +206,13 @@ const OPERACIONES: Record<string, OperacionServidor> = {
   eliminarPedidoSurtido: {
     accion: 'eliminar_registro',
     ejecutar: (token, c) => eliminarPedidoSurtido(token, texto(c, 'id')),
+  },
+
+  // Pedidos
+  actualizarEstadoPedido: {
+    accion: 'cambiar_estatus_pedido',
+    ejecutar: (token, c) =>
+      actualizarEstadoPedido(token, texto(c, 'id'), texto(c, 'estado') as EstadoPedido),
   },
 
   // Etiquetado
@@ -272,6 +306,15 @@ export async function POST(
       return Response.json(
         { error: 'unauthorized', mensaje: MENSAJE_SESION_EXPIRADA },
         { status: 401 },
+      )
+    }
+    // El 403 de Fabric no es el 403 del guard de roles: el rol sí alcanza, lo
+    // que falta es acceso al elemento dentro de Fabric. Se manda con su propio
+    // mensaje para no mandar al usuario a pedir un rol que ya tiene.
+    if (esSinAcceso(error)) {
+      return Response.json(
+        { error: 'forbidden', mensaje: MENSAJE_SIN_ACCESO_FABRIC },
+        { status: 403 },
       )
     }
     // El 429 se reenvía como 429, con Retry-After, para que el cliente sepa

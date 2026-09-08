@@ -22,11 +22,33 @@ import { useCedisRole } from '@/hooks/use-cedis-role'
 import { useFabricAuth } from '@/hooks/use-fabric-auth'
 import { SIN_CONEXION_FABRIC } from '@/lib/actions'
 import { hasPermission, MENSAJE_SIN_PERMISO, type Action } from '@/lib/auth/permissions'
+import {
+  DETALLE_AUTORIZACION_FALLIDA,
+  intentarReautenticar,
+  MENSAJE_AUTORIZACION_FALLIDA,
+} from '@/lib/auth/reautenticacion'
 import type { TokensCedis } from '@/lib/auth/tokens'
 import { MENSAJE_SESION_EXPIRADA } from '@/lib/graphql'
 import type { ResultadoAccion } from '@/types/cedis'
 
 export type OperacionCedis = (tokens: TokensCedis) => Promise<ResultadoAccion>
+
+/**
+ * Sesión inválida en una escritura: se intenta volver a entrar **una sola vez**
+ * por pestaña.
+ *
+ * El 401 del Route Handler tanto puede ser una sesión vencida como un ID token
+ * que nunca va a pasar la verificación (audiencia, tenant, reloj). Redirigir
+ * ante el segundo caso deja al usuario rebotando entre la app y Microsoft; ver
+ * lib/auth/reautenticacion.ts.
+ */
+async function avisarSesionInvalida(logout: () => Promise<void>): Promise<void> {
+  if (await intentarReautenticar(logout)) {
+    toast.error(MENSAJE_SESION_EXPIRADA)
+    return
+  }
+  toast.error(MENSAJE_AUTORIZACION_FALLIDA, { description: DETALLE_AUTORIZACION_FALLIDA })
+}
 
 export function useOperacionCedis() {
   const { getTokens, logout } = useFabricAuth()
@@ -53,8 +75,7 @@ export function useOperacionCedis() {
           })
           return false
         }
-        toast.error(MENSAJE_SESION_EXPIRADA)
-        await logout()
+        await avisarSesionInvalida(logout)
         return false
       }
 
@@ -62,8 +83,7 @@ export function useOperacionCedis() {
 
       if (!resultado.ok) {
         if (resultado.sesionExpirada) {
-          toast.error(MENSAJE_SESION_EXPIRADA)
-          await logout()
+          await avisarSesionInvalida(logout)
           return false
         }
         // El 403 y el 429 ya traen su propio mensaje: se muestran tal cual, sin

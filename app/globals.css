@@ -41,6 +41,7 @@
   --color-embarques: var(--module-embarques);
   --color-recepciones: var(--module-recepciones);
   --color-surtido: var(--module-surtido);
+  --color-pedidos: var(--module-pedidos);
   --color-etiquetado: var(--module-etiquetado);
   --color-productividad: var(--module-productividad);
   --color-incidencias: var(--module-incidencias);
@@ -99,6 +100,8 @@
   --module-embarques: oklch(0.623 0.214 259.815);
   --module-recepciones: oklch(0.723 0.219 149.579);
   --module-surtido: oklch(0.769 0.188 70.08);
+  /* indigo-500: el pedido es la orden del ERP, no el trabajo de piso ámbar. */
+  --module-pedidos: oklch(0.585 0.233 277.117);
   --module-etiquetado: oklch(0.705 0.213 47.604);
   --module-productividad: oklch(0.685 0.169 237.323);
   --module-incidencias: oklch(0.637 0.237 25.331);

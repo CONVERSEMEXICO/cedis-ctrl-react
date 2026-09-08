@@ -4,9 +4,11 @@
 // las operaciones de escritura que ejecuta cada una. Es lo único que distingue a un
 // módulo de otro — la mecánica está en <ModuleControlView>.
 
+import Link from 'next/link'
 import { EstadoBadge } from '@/components/shared/estado-badge'
 import { ModuleControlView } from '@/components/modulos/module-control-view'
-import type { ConfigCreacion, ConfigModulo } from '@/components/modulos/tipos'
+import { SurtidoDetalle } from '@/components/modulos/surtido-detalle'
+import { SIN_VALOR, type ConfigCreacion, type ConfigModulo } from '@/components/modulos/tipos'
 import {
   accionActualizarEstadoEmbarque,
   accionActualizarEstadoEtiquetado,
@@ -16,12 +18,14 @@ import {
   accionCrearLoteEtiquetado,
   accionCrearPedidoSurtido,
   accionCrearRecepcion,
+  accionCrearSurtidoDesdePedido,
   accionEliminarEmbarque,
   accionEliminarLoteEtiquetado,
   accionEliminarPedidoSurtido,
   accionEliminarRecepcion,
 } from '@/lib/actions'
 import { formatNumero, formatTexto } from '@/lib/format'
+import { conteoLineasPorPedido } from '@/lib/metrics'
 import {
   ESTADOS_EMBARQUE,
   ESTADOS_ETIQUETADO,
@@ -217,6 +221,23 @@ export const CONFIG_SURTIDO: ConfigModulo<PedidoSurtido> = {
     },
     { clave: 'cliente', encabezado: 'Cliente', celda: (p) => p.cliente },
     {
+      // El pedido del ERP que originó la orden, no el folio de la orden misma
+      // (esa es la columna "Pedido" de arriba). De ahí el nombre.
+      clave: 'pedido_id',
+      encabezado: 'Pedido origen',
+      celda: (p) =>
+        p.pedido_id ? (
+          <Link
+            href={`/pedidos/${p.pedido_id}`}
+            className="font-mono text-xs text-pedidos hover:underline hover:underline-offset-2"
+          >
+            {p.pedido}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
       clave: 'lineas',
       encabezado: 'Líneas',
       className: CLASE_NUMERO,
@@ -255,20 +276,68 @@ export const CONFIG_SURTIDO: ConfigModulo<PedidoSurtido> = {
       opciones: ESTADOS_SURTIDO,
       valorInicial: 'pendiente',
     },
+    {
+      // Salida de emergencia para el alta manual. El camino normal es al revés
+      // —abrir el surtido desde /pedidos—, y por eso al elegir un pedido aquí
+      // el alta se convierte en esa misma operación: no hay forma de escribir
+      // `pedido_id` en un alta suelta, el esquema no expone el parámetro.
+      nombre: 'pedido_id',
+      etiqueta: 'Pedido asociado (opcional)',
+      tipo: 'select',
+      valorInicial: SIN_VALOR,
+      vacio: 'Sin pedido asociado',
+      ayuda:
+        'Al elegir un pedido, el folio y el cliente se toman de él —se ignora lo capturado arriba— y el pedido pasa a «asignado».',
+      opcionesDe: (datos) =>
+        datos.pedidos
+          .filter((pedido) => pedido.estado === 'pendiente')
+          .map((pedido) => ({ value: pedido.id, label: `${pedido.folio} · ${pedido.cliente}` })),
+    },
   ],
-  crear: (tokens, v) =>
-    accionCrearPedidoSurtido(tokens, {
+  // Con pedido elegido esto NO es un alta suelta: es la misma operación que el
+  // botón de /pedidos, para que el pedido y su surtido se muevan juntos. El
+  // folio, el cliente y el conteo de líneas salen del pedido y no del
+  // formulario — el SP los recibe tal cual y nadie los coteja después.
+  accionDe: (v) => (aTexto(v.pedido_id) ? 'crear_surtido_desde_pedido' : 'crear_registro'),
+  crear: (tokens, v, { datos, idOperacion }) => {
+    const pedidoId = aTexto(v.pedido_id)
+    const pedido = pedidoId ? datos.pedidos.find((p) => p.id === pedidoId) : undefined
+
+    if (pedido) {
+      return accionCrearSurtidoDesdePedido(tokens, {
+        id: idOperacion,
+        pedido_id: pedido.id,
+        pedido: pedido.folio,
+        cliente: pedido.cliente,
+        lineas: conteoLineasPorPedido(datos.pedidoLineas)[pedido.id] ?? 0,
+        operador: aTexto(v.operador),
+        prioridad: (v.prioridad || 'Media') as Prioridad,
+      })
+    }
+
+    return accionCrearPedidoSurtido(tokens, {
       pedido: v.pedido,
       cliente: v.cliente,
       lineas: aNumero(v.lineas),
       operador: aTexto(v.operador),
       prioridad: (v.prioridad || 'Media') as Prioridad,
       estado: (v.estado || 'pendiente') as EstadoSurtido,
-    }),
+    })
+  },
   // Sin operador el SP rechaza el paso a 'surtiendo'; se reenvía el asignado.
   cambiarEstado: (tokens, registro, estado) =>
     accionActualizarEstadoSurtido(tokens, registro.id, estado as EstadoSurtido, registro.operador),
   eliminar: (tokens, id) => accionEliminarPedidoSurtido(tokens, id),
+  detalle: {
+    titulo: 'Detalle del surtido',
+    subtitulo: (registro) => registro.pedido,
+    cuerpo: (registro, cerrar) => <SurtidoDetalle registro={registro} cerrar={cerrar} />,
+  },
+  enfoque: {
+    param: 'pedido',
+    coincide: (registro, pedidoId) => registro.pedido_id === pedidoId,
+    aviso: 'Mostrando solo el surtido del pedido seleccionado.',
+  },
 }
 
 // ---------------------------------------------------------------------------

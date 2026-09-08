@@ -6,6 +6,8 @@ import type {
   Embarque,
   Incidencia,
   LoteEtiquetado,
+  Pedido,
+  PedidoLinea,
   PedidoSurtido,
   Recepcion,
   RegistroProductividad,
@@ -127,17 +129,23 @@ export const recepcionesSeed: Recepcion[] = [
   },
 ]
 
+// srt-1 y srt-4 nacen de un pedido capturado (`pedido_id`): son los dos casos
+// que permiten recorrer el vínculo en los dos sentidos sin API. Su `cliente` y
+// su conteo de `lineas` se dejaron iguales a los del pedido a propósito —con
+// datos contradictorios la vista de detalle no se puede leer. Los otros tres
+// van con `pedido_id: null`, que es el alta manual desde el propio módulo.
 export const pedidosSurtidoSeed: PedidoSurtido[] = [
   {
     id: 'srt-1',
     pedido: 'PED-77210',
-    cliente: 'C&A',
-    lineas: 128,
+    cliente: 'Soriana',
+    lineas: 4,
     operador: 'Fernando Uribe',
     prioridad: 'Alta',
     estado: 'surtiendo',
-    created_at: '2026-08-19T12:00:00Z',
-    updated_at: '2026-08-19T14:30:00Z',
+    pedido_id: 'ped-1',
+    created_at: '2026-09-01T12:00:00Z',
+    updated_at: '2026-09-02T14:30:00Z',
   },
   {
     id: 'srt-2',
@@ -147,6 +155,7 @@ export const pedidosSurtidoSeed: PedidoSurtido[] = [
     operador: 'Paola Camacho',
     prioridad: 'Media',
     estado: 'verificado',
+    pedido_id: null,
     created_at: '2026-08-19T02:00:00Z',
     updated_at: '2026-08-19T13:00:00Z',
   },
@@ -158,19 +167,21 @@ export const pedidosSurtidoSeed: PedidoSurtido[] = [
     operador: null,
     prioridad: 'Baja',
     estado: 'pendiente',
+    pedido_id: null,
     created_at: '2026-08-19T13:30:00Z',
     updated_at: null,
   },
   {
     id: 'srt-4',
     pedido: 'PED-77180',
-    cliente: 'Liverpool',
-    lineas: 96,
+    cliente: 'Chedraui',
+    lineas: 3,
     operador: 'Paola Camacho',
     prioridad: 'Media',
     estado: 'completado',
-    created_at: '2026-08-18T14:00:00Z',
-    updated_at: '2026-08-18T22:00:00Z',
+    pedido_id: 'ped-2',
+    created_at: '2026-08-28T14:00:00Z',
+    updated_at: '2026-09-01T22:00:00Z',
   },
   {
     id: 'srt-5',
@@ -180,8 +191,264 @@ export const pedidosSurtidoSeed: PedidoSurtido[] = [
     operador: 'Fernando Uribe',
     prioridad: 'Alta',
     estado: 'pausado',
+    pedido_id: null,
     created_at: '2026-08-19T14:15:00Z',
     updated_at: '2026-08-19T16:05:00Z',
+  },
+]
+
+// ---------------------------------------------------------------------------
+// Pedidos del ERP
+// ---------------------------------------------------------------------------
+//
+// Las fechas son fijas, como en el resto del seed. Eso significa que la métrica
+// de "vencidos" envejece: `ped-4` está diseñado para caer vencido y los otros
+// no, pero conforme pase el tiempo los demás también lo harán. Es un límite del
+// respaldo estático, no un cálculo mal hecho — con la API conectada las fechas
+// llegan vivas.
+export const pedidosSeed: Pedido[] = [
+  {
+    id: 'ped-1',
+    folio: 'PD-90114',
+    cliente: 'Soriana',
+    fecha_pedido: '2026-09-01T09:30:00Z',
+    fecha_requerida: '2026-09-06T18:00:00Z',
+    direccion_entrega: 'CEDIS Soriana Tlalnepantla, Av. Sor Juana Inés de la Cruz 280, Edo. Méx.',
+    estado: 'asignado',
+    notas: 'Entregar en andén 4. Cita confirmada por el proveedor logístico.',
+    created_at: '2026-09-01T09:30:00Z',
+    updated_at: '2026-09-01T12:00:00Z',
+  },
+  {
+    id: 'ped-2',
+    folio: 'PD-90108',
+    cliente: 'Chedraui',
+    fecha_pedido: '2026-08-28T11:00:00Z',
+    fecha_requerida: '2026-09-02T17:00:00Z',
+    direccion_entrega: 'CEDIS Chedraui Xalapa, Carr. Xalapa-Veracruz km 3.5, Ver.',
+    estado: 'completado',
+    notas: null,
+    created_at: '2026-08-28T11:00:00Z',
+    updated_at: '2026-09-01T22:00:00Z',
+  },
+  {
+    id: 'ped-3',
+    folio: 'PD-90121',
+    cliente: 'Walmart',
+    fecha_pedido: '2026-09-02T08:15:00Z',
+    fecha_requerida: '2026-09-08T16:00:00Z',
+    direccion_entrega: 'CEDIS Walmart Cuautitlán, Av. Central 45, Edo. Méx.',
+    estado: 'pendiente',
+    notas: 'Tarima estándar 1.20 × 1.00; rechazan estiba mixta.',
+    created_at: '2026-09-02T08:15:00Z',
+    updated_at: '2026-09-02T08:15:00Z',
+  },
+  {
+    id: 'ped-4',
+    folio: 'PD-90123',
+    cliente: 'OXXO',
+    fecha_pedido: '2026-08-30T14:40:00Z',
+    fecha_requerida: '2026-09-02T12:00:00Z',
+    direccion_entrega: 'CEDIS OXXO Ecatepec, Av. Central s/n, Edo. Méx.',
+    estado: 'pendiente',
+    notas: 'Pedido vencido: reprogramar cita con el cliente antes de surtir.',
+    created_at: '2026-08-30T14:40:00Z',
+    updated_at: '2026-08-30T14:40:00Z',
+  },
+  {
+    id: 'ped-5',
+    folio: 'PD-90126',
+    cliente: 'Farmacias del Ahorro',
+    fecha_pedido: '2026-09-03T10:05:00Z',
+    fecha_requerida: '2026-09-10T15:00:00Z',
+    direccion_entrega: null,
+    estado: 'pendiente',
+    notas: null,
+    created_at: '2026-09-03T10:05:00Z',
+    updated_at: '2026-09-03T10:05:00Z',
+  },
+]
+
+/**
+ * Renglones de los pedidos, con `linea` numerada 1..n **por pedido**: así llega
+ * el consecutivo del ERP y así se muestra. El arreglo se deja agrupado por
+ * pedido y en orden de línea para que el respaldo seed reproduzca el
+ * `orderBy: { linea: ASC }` de la API sin ordenar nada en el cliente.
+ */
+export const pedidoLineasSeed: PedidoLinea[] = [
+  // ped-1 · Soriana — en surtido, parcialmente cubierto
+  {
+    id: 'pl-1-1',
+    pedido_id: 'ped-1',
+    linea: 1,
+    sku: 'ABA-10442',
+    producto: 'Aceite comestible 850 ml',
+    cantidad_solicitada: 480,
+    cantidad_surtida: 480,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-1-2',
+    pedido_id: 'ped-1',
+    linea: 2,
+    sku: 'ABA-10877',
+    producto: 'Frijol bayo 1 kg',
+    cantidad_solicitada: 360,
+    cantidad_surtida: 200,
+    unidad_medida: 'PZA',
+    notas: 'Faltante parcial en zona B',
+  },
+  {
+    id: 'pl-1-3',
+    pedido_id: 'ped-1',
+    linea: 3,
+    sku: 'ABA-11250',
+    producto: 'Azúcar estándar 2 kg',
+    cantidad_solicitada: 240,
+    cantidad_surtida: 240,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-1-4',
+    pedido_id: 'ped-1',
+    linea: 4,
+    sku: 'HIG-20310',
+    producto: 'Papel higiénico 4 rollos',
+    cantidad_solicitada: 600,
+    cantidad_surtida: 0,
+    unidad_medida: 'PAQ',
+    notas: null,
+  },
+
+  // ped-2 · Chedraui — completado
+  {
+    id: 'pl-2-1',
+    pedido_id: 'ped-2',
+    linea: 1,
+    sku: 'ABA-10442',
+    producto: 'Aceite comestible 850 ml',
+    cantidad_solicitada: 300,
+    cantidad_surtida: 300,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-2-2',
+    pedido_id: 'ped-2',
+    linea: 2,
+    sku: 'ABA-13005',
+    producto: 'Café soluble 200 g',
+    cantidad_solicitada: 180,
+    cantidad_surtida: 180,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-2-3',
+    pedido_id: 'ped-2',
+    linea: 3,
+    sku: 'ABA-12118',
+    producto: 'Galleta surtida 1 kg',
+    cantidad_solicitada: 240,
+    cantidad_surtida: 240,
+    unidad_medida: 'CAJ',
+    notas: null,
+  },
+
+  // ped-3 · Walmart — pendiente
+  {
+    id: 'pl-3-1',
+    pedido_id: 'ped-3',
+    linea: 1,
+    sku: 'HIG-20455',
+    producto: 'Detergente en polvo 5 kg',
+    cantidad_solicitada: 400,
+    cantidad_surtida: 0,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-3-2',
+    pedido_id: 'ped-3',
+    linea: 2,
+    sku: 'HIG-20780',
+    producto: 'Jabón de tocador 150 g',
+    cantidad_solicitada: 960,
+    cantidad_surtida: 0,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-3-3',
+    pedido_id: 'ped-3',
+    linea: 3,
+    sku: 'ABA-10877',
+    producto: 'Frijol bayo 1 kg',
+    cantidad_solicitada: 520,
+    cantidad_surtida: 0,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+
+  // ped-4 · OXXO — pendiente y vencido
+  {
+    id: 'pl-4-1',
+    pedido_id: 'ped-4',
+    linea: 1,
+    sku: 'BEB-30112',
+    producto: 'Agua natural 600 ml',
+    cantidad_solicitada: 1200,
+    cantidad_surtida: 0,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-4-2',
+    pedido_id: 'ped-4',
+    linea: 2,
+    sku: 'BOT-31004',
+    producto: 'Botana de maíz 45 g',
+    cantidad_solicitada: 1800,
+    cantidad_surtida: 0,
+    unidad_medida: 'PZA',
+    notas: 'Cuidar fecha de caducidad más próxima',
+  },
+
+  // ped-5 · Farmacias del Ahorro — pendiente
+  {
+    id: 'pl-5-1',
+    pedido_id: 'ped-5',
+    linea: 1,
+    sku: 'HIG-20990',
+    producto: 'Gel antibacterial 1 L',
+    cantidad_solicitada: 300,
+    cantidad_surtida: 0,
+    unidad_medida: 'PZA',
+    notas: null,
+  },
+  {
+    id: 'pl-5-2',
+    pedido_id: 'ped-5',
+    linea: 2,
+    sku: 'HIG-21044',
+    producto: 'Toalla húmeda 80 pzas',
+    cantidad_solicitada: 450,
+    cantidad_surtida: 0,
+    unidad_medida: 'PAQ',
+    notas: null,
+  },
+  {
+    id: 'pl-5-3',
+    pedido_id: 'ped-5',
+    linea: 3,
+    sku: null,
+    producto: 'Vitamina C 1 g, 10 tabletas',
+    cantidad_solicitada: 220,
+    cantidad_surtida: 0,
+    unidad_medida: 'CAJ',
+    notas: 'SKU pendiente de alta en el catálogo',
   },
 ]
 

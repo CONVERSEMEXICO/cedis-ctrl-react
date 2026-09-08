@@ -29,6 +29,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     embarques: datos.embarques.length,
     recepciones: datos.recepciones.length,
     surtido: datos.pedidosSurtido.length,
+    // Los demás badges cuentan el total del módulo; el de pedidos cuenta solo
+    // los pendientes, que es el trabajo que todavía hay que asignar a surtido.
+    pedidos: datos.pedidos.filter((pedido) => pedido.estado === 'pendiente').length,
     etiquetado: datos.lotesEtiquetado.length,
     productividad: datos.productividad.length,
     incidencias: incidenciasAbiertas(datos.incidencias).length,

@@ -6,6 +6,7 @@ import type {
   EstadoEmbarque,
   EstadoEtiquetado,
   EstadoIncidencia,
+  EstadoPedido,
   EstadoRecepcion,
   EstadoSurtido,
   ModuloOperativo,
@@ -137,6 +138,35 @@ export const ESTADO_ETIQUETADO: Record<EstadoEtiquetado, EstadoConfig> = {
   },
 }
 
+/**
+ * Estados del pedido del ERP.
+ *
+ * `asignado` usa el color del módulo de pedidos y no el de surtido a
+ * propósito: describe al pedido, no al avance del surtido que lo atiende.
+ */
+export const ESTADO_PEDIDO: Record<EstadoPedido, EstadoConfig> = {
+  pendiente: {
+    label: 'Pendiente',
+    dotClass: 'bg-muted-foreground',
+    badgeClass: 'bg-secondary text-secondary-foreground',
+  },
+  asignado: {
+    label: 'Asignado',
+    dotClass: 'bg-pedidos',
+    badgeClass: 'bg-pedidos/15 text-pedidos',
+  },
+  completado: {
+    label: 'Completado',
+    dotClass: 'bg-success',
+    badgeClass: 'bg-success/15 text-success',
+  },
+  cancelado: {
+    label: 'Cancelado',
+    dotClass: 'bg-destructive',
+    badgeClass: 'bg-destructive/15 text-destructive',
+  },
+}
+
 export const ESTADO_INCIDENCIA: Record<EstadoIncidencia, EstadoConfig> = {
   abierta: {
     label: 'Abierta',
@@ -240,6 +270,7 @@ export const ESTADOS_EMBARQUE = opciones(ESTADO_EMBARQUE)
 export const ESTADOS_RECEPCION = opciones(ESTADO_RECEPCION)
 export const ESTADOS_SURTIDO = opciones(ESTADO_SURTIDO)
 export const ESTADOS_ETIQUETADO = opciones(ESTADO_ETIQUETADO)
+export const ESTADOS_PEDIDO = opciones(ESTADO_PEDIDO)
 export const PRIORIDADES = opciones(PRIORIDAD_CONFIG)
 
 export const TURNOS: Opcion<Turno>[] = [

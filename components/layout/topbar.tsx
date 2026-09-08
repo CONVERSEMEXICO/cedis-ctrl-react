@@ -18,12 +18,20 @@ const TITULOS: Record<string, string> = {
   '/embarques': 'Embarques',
   '/recepciones': 'Recepciones',
   '/surtido': 'Surtido',
+  '/pedidos': 'Pedidos',
   '/etiquetado': 'Etiquetado',
   '/productividad': 'Productividad',
   '/incidencias': 'Incidencias',
 }
 
-/** Módulo que se preselecciona al reportar una incidencia desde cada ruta. */
+/**
+ * Módulo que se preselecciona al reportar una incidencia desde cada ruta.
+ *
+ * `/pedidos` no aparece a propósito: `ModuloOperativo` son los seis módulos
+ * sobre los que se levanta una incidencia, y un problema con un pedido se
+ * reporta contra surtido. Sin entrada, el diálogo abre sin preselección —el
+ * mismo comportamiento que en el dashboard.
+ */
 const MODULO_POR_RUTA: Record<string, ModuloOperativo> = {
   '/embarques': 'embarques',
   '/recepciones': 'recepciones',
