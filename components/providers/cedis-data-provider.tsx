@@ -29,7 +29,20 @@ import {
   type DatosCedis,
   type OfflinePorConjunto,
 } from '@/lib/data'
-import { esperaRestanteMs, MENSAJE_SESION_EXPIRADA, mensajeLimiteExcedido } from '@/lib/graphql'
+import {
+  DETALLE_AUTORIZACION_FALLIDA,
+  intentarReautenticar,
+  limpiarReautenticacion,
+  MENSAJE_AUTORIZACION_FALLIDA,
+} from '@/lib/auth/reautenticacion'
+import {
+  DETALLE_SIN_ACCESO_FABRIC,
+  esperaRestanteMs,
+  explicarFallo,
+  MENSAJE_SESION_EXPIRADA,
+  MENSAJE_SIN_ACCESO_FABRIC,
+  mensajeLimiteExcedido,
+} from '@/lib/graphql'
 
 export interface EstadoDatosCedis {
   datos: DatosCedis
@@ -51,6 +64,11 @@ const ESTADO_INICIAL: EstadoDatosCedis = {
   refrescar: async () => {},
 }
 
+/** Sesión de Entra viva, pero MSAL no pudo entregar el token de Fabric. */
+const MENSAJE_TOKEN_FABRIC = 'No se pudo obtener el token de Microsoft Fabric'
+const DETALLE_TOKEN_FABRIC =
+  'Revisa que el navegador no esté bloqueando la ventana emergente de Microsoft, y que tu cuenta haya aceptado los permisos de la aplicación.'
+
 const ContextoDatosCedis = createContext<EstadoDatosCedis>(ESTADO_INICIAL)
 
 export function useDatosCedis(): EstadoDatosCedis {
@@ -70,6 +88,16 @@ export function ProveedorDatosCedis({ children }: { children: React.ReactNode })
   const cargar = useCallback(async () => {
     setCargando(true)
     const token = await getAccessToken()
+
+    // Sesión de Entra viva pero sin token de Fabric: `acquireTokenSilent` falló
+    // y el popup de respaldo no prosperó —bloqueado por el navegador, cerrado,
+    // o un consentimiento que sigue pendiente para esta cuenta—. Antes esto
+    // solo dejaba un console.warn y la app se veía idéntica a un entorno sin
+    // Entra configurado.
+    if (token === null && isAuthenticated) {
+      toast.error(MENSAJE_TOKEN_FABRIC, { description: DETALLE_TOKEN_FABRIC })
+    }
+
     const resultado = await cargarDatosCedis(token)
 
     setDatos(resultado.datos)
@@ -84,11 +112,37 @@ export function ProveedorDatosCedis({ children }: { children: React.ReactNode })
     }
     setLimitado(false)
 
+    // El 401 no siempre es una sesión vencida: también lo devuelve Fabric
+    // cuando la cuenta no tiene acceso. Cerrar sesión ahí manda al usuario a
+    // Microsoft, que con SSO lo devuelve autenticado, y el 401 se repite —el
+    // ciclo de redireccionamiento—. Por eso el reintento es uno solo por
+    // pestaña; ver lib/auth/reautenticacion.ts.
     if (resultado.sesionExpirada) {
-      toast.error(MENSAJE_SESION_EXPIRADA)
-      await logout()
+      if (await intentarReautenticar(logout)) {
+        toast.error(MENSAJE_SESION_EXPIRADA)
+        return
+      }
+      toast.error(MENSAJE_AUTORIZACION_FALLIDA, { description: DETALLE_AUTORIZACION_FALLIDA })
+      return
     }
-  }, [getAccessToken, logout])
+
+    // 403: el token es bueno y la cuenta entró a la app, pero Fabric no la deja
+    // ver el elemento. Volver a iniciar sesión no lo arregla —los app roles de
+    // Entra no conceden permisos dentro de Fabric—, así que se dice qué hacer.
+    if (resultado.sinAcceso) {
+      toast.error(MENSAJE_SIN_ACCESO_FABRIC, { description: DETALLE_SIN_ACCESO_FABRIC })
+    } else if (resultado.motivo !== null && token !== null) {
+      // La carga cayó al seed con un token en mano: hay una causa real y el
+      // banner de offline por sí solo no la dice. `explicarFallo` traduce el
+      // caso frecuente —la base SQL rechazando la identidad— a algo accionable.
+      const { mensaje, detalle } = explicarFallo(resultado.motivo)
+      toast.error(mensaje, { description: detalle })
+    }
+
+    // Carga sin 401: la autorización funciona, así que una sesión que venza más
+    // tarde en esta misma pestaña vuelve a tener su intento de re-entrada.
+    limpiarReautenticacion()
+  }, [getAccessToken, isAuthenticated, logout])
 
   const refrescar = useCallback(async () => {
     if (enVuelo.current) return enVuelo.current

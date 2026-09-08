@@ -30,6 +30,13 @@ export class GraphQLRequestError extends Error {
     public readonly limiteExcedido = false,
     /** Momento en que expira el bloqueo, cuando Fabric lo informa. */
     public readonly reintentarEn?: Date,
+    /**
+     * 403 de Fabric: el token es válido pero la cuenta no tiene acceso al
+     * elemento. Es distinto del 401 y volver a iniciar sesión no lo arregla:
+     * los app roles de Entra no dan permisos dentro de Fabric, esos se
+     * conceden en el workspace.
+     */
+    public readonly sinAcceso = false,
   ) {
     super(message)
     this.name = 'GraphQLRequestError'
@@ -39,12 +46,62 @@ export class GraphQLRequestError extends Error {
 /** Mensaje único de sesión vencida, igual en toda la app. */
 export const MENSAJE_SESION_EXPIRADA = 'Tu sesión expiró, vuelve a iniciar sesión'
 
+/** 403 de Fabric: la cuenta entró a la app pero no tiene acceso a los datos. */
+export const MENSAJE_SIN_ACCESO_FABRIC =
+  'Tu cuenta no tiene acceso a los datos de Microsoft Fabric'
+
+export const DETALLE_SIN_ACCESO_FABRIC =
+  'El acceso a Fabric se concede en el workspace, aparte de los roles de la aplicación. Pide que te agreguen al workspace del CEDIS.'
+
+/** Lo que se muestra cuando el panel entero cayó al respaldo seed. */
+export const MENSAJE_CARGA_FALLIDA = 'No se pudieron cargar los datos de la operación'
+
+/**
+ * El caso que se ve como un fallo de login y no lo es.
+ *
+ * La API de GraphQL de Fabric responde **200 con errores** —no un 401— cuando
+ * el llamador sí tiene permiso sobre el elemento de la API pero la conexión al
+ * origen de datos rechaza su identidad: "The request to data source failed with
+ * authentication error". Con la conexión en SSO, Fabric pasa la identidad del
+ * usuario a la base SQL, así que el permiso hace falta **dentro de la base**, no
+ * en el registro de aplicación de Entra ni en los app roles del panel. De ahí
+ * que un usuario correctamente dado de alta, con su rol asignado, entre a la
+ * app y no vea un solo dato.
+ */
+export const MENSAJE_SIN_ACCESO_ORIGEN = 'Tu cuenta no tiene acceso a la base de datos del CEDIS'
+
+export const DETALLE_SIN_ACCESO_ORIGEN =
+  'Microsoft Fabric te reconoce, pero la conexión a la base SQL rechaza tu identidad. El permiso se concede dentro de la base de datos —no con los roles de la aplicación ni con la asignación en Entra ID.'
+
+/** Reconoce el rechazo del origen de datos en los mensajes de un 200. */
+export function esRechazoDeOrigen(mensajes: string): boolean {
+  return /data source/i.test(mensajes) && /authentication/i.test(mensajes)
+}
+
+/**
+ * Traduce el motivo crudo de un fallo de carga al par mensaje/detalle que se le
+ * enseña al usuario.
+ *
+ * Existe para que el texto en inglés que devuelve Fabric no sea lo único que se
+ * ve: dicho tal cual no le dice a nadie dónde está el arreglo.
+ */
+export function explicarFallo(motivo: string): { mensaje: string; detalle: string } {
+  if (esRechazoDeOrigen(motivo)) {
+    return { mensaje: MENSAJE_SIN_ACCESO_ORIGEN, detalle: DETALLE_SIN_ACCESO_ORIGEN }
+  }
+  return { mensaje: MENSAJE_CARGA_FALLIDA, detalle: motivo }
+}
+
 export function esSesionExpirada(error: unknown): boolean {
   return error instanceof GraphQLRequestError && error.sesionExpirada
 }
 
 export function esLimiteExcedido(error: unknown): boolean {
   return error instanceof GraphQLRequestError && error.limiteExcedido
+}
+
+export function esSinAcceso(error: unknown): boolean {
+  return error instanceof GraphQLRequestError && error.sinAcceso
 }
 
 // --- Cortacircuitos de tasa -------------------------------------------------
@@ -116,6 +173,16 @@ function errorDeLimite(hasta: number): GraphQLRequestError {
 
 // --- Ejecución --------------------------------------------------------------
 
+/** Tope del texto de error que se le enseña al usuario. */
+const MAXIMO_DETALLE = 300
+
+/** Deja el cuerpo de un error en una línea corta y legible. */
+function recortar(cuerpo: string): string {
+  const limpio = cuerpo.replace(/\s+/g, ' ').trim()
+  if (limpio === '') return ''
+  return limpio.length > MAXIMO_DETALLE ? `${limpio.slice(0, MAXIMO_DETALLE)}…` : limpio
+}
+
 export interface RespuestaGraphQL<T> {
   data?: T
   errors?: { message: string; path?: (string | number)[] }[]
@@ -169,8 +236,25 @@ export async function ejecutarGraphQL<
     )
   }
 
-  if (response.status === 401) {
-    throw new GraphQLRequestError(MENSAJE_SESION_EXPIRADA, 401, undefined, true)
+  // El cuerpo de un rechazo de Fabric trae la razón real —token sin la
+  // audiencia correcta, elemento no compartido, capacidad pausada—, y es lo
+  // único que permite distinguir un problema de la cuenta de uno del entorno.
+  // Sin esto todos los fallos se veían igual: "modo offline", sin más.
+  if (response.status === 401 || response.status === 403) {
+    const detalle = recortar(await response.text().catch(() => ''))
+    const esExpirada = response.status === 401
+    console.error(
+      `[cedis] Fabric rechazó la petición (${response.status})${detalle ? `: ${detalle}` : ''}`,
+    )
+    throw new GraphQLRequestError(
+      detalle || (esExpirada ? MENSAJE_SESION_EXPIRADA : MENSAJE_SIN_ACCESO_FABRIC),
+      response.status,
+      undefined,
+      esExpirada,
+      false,
+      undefined,
+      !esExpirada,
+    )
   }
 
   if (response.status === 429) {
@@ -183,8 +267,9 @@ export async function ejecutarGraphQL<
   }
 
   if (!response.ok) {
+    const detalle = recortar(await response.text().catch(() => ''))
     throw new GraphQLRequestError(
-      `La API de Microsoft Fabric respondió con un error HTTP ${response.status}`,
+      `La API de Microsoft Fabric respondió con un error HTTP ${response.status}${detalle ? `: ${detalle}` : ''}`,
       response.status,
     )
   }

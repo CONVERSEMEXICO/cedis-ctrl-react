@@ -12,11 +12,20 @@ import { useFabricAuth } from '@/hooks/use-fabric-auth'
 export function PantallaLogin() {
   const { login } = useFabricAuth()
   const [entrando, setEntrando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function alEntrar() {
     setEntrando(true)
+    setError(null)
     try {
       await login()
+    } catch (fallo) {
+      // Sin esto el botón simplemente no hacía nada: MSAL puede negarse a
+      // arrancar el redirect —una interacción ya en curso, el popup bloqueado,
+      // la configuración incompleta— y el usuario se queda mirando la pantalla
+      // sin saber que hubo un error.
+      console.error('[cedis] no se pudo iniciar el redirect de login —', fallo)
+      setError(fallo instanceof Error ? fallo.message : String(fallo))
     } finally {
       // El redirect saca la página; si falla, el botón vuelve a habilitarse.
       setEntrando(false)
@@ -40,6 +49,14 @@ export function PantallaLogin() {
             <LogIn data-icon="inline-start" />
             {entrando ? 'Abriendo Microsoft…' : 'Iniciar sesión con Microsoft'}
           </Button>
+          {error !== null && (
+            <p
+              role="alert"
+              className="rounded border border-destructive/40 bg-destructive/10 p-2 font-mono text-[11px] leading-snug text-foreground"
+            >
+              {error}
+            </p>
+          )}
           <p className="font-mono text-[11px] leading-tight text-muted-foreground">
             Centro de distribución · Operación en vivo
           </p>

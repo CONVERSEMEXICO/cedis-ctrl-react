@@ -104,6 +104,14 @@ const ORDEN_RECIENTE = { created_at: 'DESC' }
 
 /** Los conjuntos con tabla publicada, tal como los devuelve Fabric. */
 export interface DatosOperativos {
+  /**
+   * Mensajes de los errores parciales, sin repetidos.
+   *
+   * Fabric devuelve un error **por campo raíz**, así que un solo problema de
+   * fondo llega siete veces con el mismo texto. Se deduplican aquí para que
+   * quien los muestre no tenga que repetir la misma frase siete veces.
+   */
+  errores: string[]
   embarques: Embarque[] | null
   recepciones: Recepcion[] | null
   pedidosSurtido: PedidoSurtido[] | null
@@ -175,23 +183,25 @@ export async function getDatosOperativos(token: Token): Promise<DatosOperativos>
 
   const respuesta = await ejecutarGraphQL<RespuestaDatosOperativos>(QUERY, undefined, token)
 
-  if (respuesta.errors?.length) {
-    // No se lanza: puede haber datos parciales. Queda el rastro en consola con
-    // el `path`, que es lo que dice qué tabla falló.
-    console.error('[cedis] la carga agrupada trajo errores parciales —', respuesta.errors)
+  const errores = [...new Set(respuesta.errors?.map((e) => e.message) ?? [])]
+
+  if (errores.length > 0) {
+    // No se lanza mientras haya datos: pueden ser parciales. Queda el rastro en
+    // consola con el `path`, que es lo que dice qué tabla falló.
+    console.error('[cedis] la carga agrupada trajo errores —', respuesta.errors)
   }
 
   const datos = respuesta.data
   if (!datos) {
     throw new GraphQLRequestError(
-      respuesta.errors?.map((e) => e.message).join('; ') ??
-        'La respuesta de la API no contiene datos.',
+      errores.join('; ') || 'La respuesta de la API no contiene datos.',
       200,
       respuesta.errors,
     )
   }
 
   return {
+    errores,
     embarques: datos.embarques?.items ?? null,
     recepciones: datos.recepciones?.items ?? null,
     pedidosSurtido: datos.surtidos?.items ?? null,

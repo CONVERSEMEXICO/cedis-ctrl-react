@@ -17,7 +17,7 @@
 // nuevas: son dos campos raíz más del mismo documento y la carga del panel
 // sigue costando una sola petición.
 
-import { esLimiteExcedido, esSesionExpirada } from '@/lib/graphql'
+import { esLimiteExcedido, esSesionExpirada, esSinAcceso } from '@/lib/graphql'
 import { getDatosOperativos } from '@/lib/queries'
 import {
   embarquesSeed,
@@ -74,6 +74,17 @@ export interface ResultadoDatosCedis {
   sesionExpirada: boolean
   /** true si Fabric respondió 429: hay que dejar de pedir por un rato. */
   limiteExcedido: boolean
+  /** true si Fabric respondió 403: la cuenta no tiene acceso al elemento. */
+  sinAcceso: boolean
+  /**
+   * Por qué cayó **toda** la carga al respaldo seed, en el texto que Fabric
+   * devolvió. null cuando la carga funcionó, aunque sea parcialmente.
+   *
+   * Existe porque el banner de offline no distingue "no hay endpoint
+   * configurado" de "esta cuenta no tiene acceso", y sin ese texto no hay forma
+   * de saber cuál de los dos está pasando desde la pantalla.
+   */
+  motivo: string | null
 }
 
 /** Estado inicial: sin datos todavía, todo marcado como no cargado. */
@@ -143,6 +154,8 @@ function todoOffline(error: unknown): ResultadoDatosCedis {
     },
     sesionExpirada: esSesionExpirada(error),
     limiteExcedido: esLimiteExcedido(error),
+    sinAcceso: esSinAcceso(error),
+    motivo: error instanceof Error ? error.message : String(error),
   }
 }
 
@@ -187,5 +200,10 @@ export async function cargarDatosCedis(token: Token): Promise<ResultadoDatosCedi
     },
     sesionExpirada: false,
     limiteExcedido: false,
+    sinAcceso: false,
+    // Fallo parcial: hubo respuesta y algunos conjuntos sirven, pero el motivo
+    // de los que no viajan igual. Sin esto, una tabla caída solo se veía como
+    // un banner de offline en su página, sin decir por qué.
+    motivo: operativos.errores.length > 0 ? operativos.errores.join('; ') : null,
   }
 }

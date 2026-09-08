@@ -23,8 +23,10 @@ import {
 import {
   esLimiteExcedido,
   esSesionExpirada,
+  esSinAcceso,
   GraphQLRequestError,
   MENSAJE_SESION_EXPIRADA,
+  MENSAJE_SIN_ACCESO_FABRIC,
 } from '@/lib/graphql'
 import {
   actualizarEstadoEmbarque,
@@ -304,6 +306,15 @@ export async function POST(
       return Response.json(
         { error: 'unauthorized', mensaje: MENSAJE_SESION_EXPIRADA },
         { status: 401 },
+      )
+    }
+    // El 403 de Fabric no es el 403 del guard de roles: el rol sí alcanza, lo
+    // que falta es acceso al elemento dentro de Fabric. Se manda con su propio
+    // mensaje para no mandar al usuario a pedir un rol que ya tiene.
+    if (esSinAcceso(error)) {
+      return Response.json(
+        { error: 'forbidden', mensaje: MENSAJE_SIN_ACCESO_FABRIC },
+        { status: 403 },
       )
     }
     // El 429 se reenvía como 429, con Retry-After, para que el cliente sepa

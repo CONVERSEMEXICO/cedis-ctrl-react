@@ -26,7 +26,7 @@ Por eso cada SP de aquí termina con **un solo `SELECT`** de la fila afectada: e
 | 04 | [04_sp_etiquetado.sql](04_sp_etiquetado.sql) | `dbo.ActualizarEstadoEtiquetado` |
 | 05 | [05_sp_incidencias.sql](05_sp_incidencias.sql) | `dbo.CrearIncidencia`, `dbo.ActualizarEstadoIncidencia` |
 | 06 | [06_sp_productividad.sql](06_sp_productividad.sql) | `dbo.RegistrarProductividad` |
-| 07 | [07_permisos.sql](07_permisos.sql) | `GRANT SELECT` / `GRANT EXECUTE` a la identidad de la API |
+| 07 | [07_permisos.sql](07_permisos.sql) | `GRANT SELECT` / `EXECUTE` / `DELETE` a la identidad que consume la API, y el `CREATE USER ... FROM EXTERNAL PROVIDER` que tiene que existir antes. **Con la conexión en SSO hay que correrlo por cada usuario o grupo**: el app role de Entra no da acceso a los datos, y sin esto la API responde 200 con `"The request to data source failed with authentication error"` y el panel se ve como si el login hubiera fallado |
 | 08 | [08_sp_altas.sql](08_sp_altas.sql) | `dbo.CrearEmbarque`, `dbo.CrearRecepcion`, `dbo.CrearPedidoSurtido`, `dbo.CrearLoteEtiquetado` — altas con sello de auditoría del server |
 | 09 | [09_diagnostico_columnas.sql](09_diagnostico_columnas.sql) | Solo lectura: tipos y longitudes reales de las columnas contra lo que escriben las altas |
 | 10 | [10_ampliar_id.sql](10_ampliar_id.sql) | Amplía `id` a `NVARCHAR(50)` donde no cabe el GUID que generan las altas. Idempotente |
